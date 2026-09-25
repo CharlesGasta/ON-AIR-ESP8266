@@ -73,7 +73,7 @@ Envoyer le fichier :
 
 ## Version actuelle
 
-**V2.9.0 — STABLE UI ALERT FIX**
+**V2.10.0 — LOOP FADE ALERT**
 
 ## Auteur
 
