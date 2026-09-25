@@ -1,5 +1,12 @@
 # Changelog
 
+## V2.10.0
+
+- animation Fade modifiée en boucle
+- séquence : 100 % instantané → fade progressif jusqu'à 0 % → retour instantané à 100 %
+- répétition pendant toute la durée d'alerte
+- le réglage vitesse / rythme contrôle la durée d'un cycle
+
 ## V2.9.0
 
 - stabilisation supplémentaire de l'interface Web
