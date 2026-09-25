@@ -31,7 +31,7 @@
 #include <ESP8266mDNS.h>
 #include <ESP8266HTTPUpdateServer.h>
 
-#define FIRMWARE_VERSION "2.9.0 STABLE UI ALERT FIX"
+#define FIRMWARE_VERSION "2.10.0 LOOP FADE ALERT"
 
 const uint8_t PIN_RED   = D2;
 const uint8_t PIN_GREEN = D1;
@@ -2166,12 +2166,20 @@ void updateAlert() {
   switch (m.alertAnimation) {
 
     case ALERT_FADE_TO_BLACK: {
-      // UN SEUL fade sur toute la duree :
-      // depart 100 %, fin 0 %.
+      // Boucle "flash + fade" :
+      // 100 % instantane -> fade progressif jusqu'a 0 % -> retour instantane a 100 %.
+      // blinkMs regle la duree d'un cycle complet.
       if (now - alertAnimLastFrameAt < 20UL) return;
       alertAnimLastFrameAt = now;
 
-      uint8_t level = (uint8_t)(100.0f * (1.0f - progress));
+      unsigned long cycle =
+        max(300UL, (unsigned long)m.blinkMs);
+
+      unsigned long pos = elapsed % cycle;
+      float cycleProgress = (float)pos / (float)cycle;
+
+      uint8_t level =
+        (uint8_t)(100.0f * (1.0f - cycleProgress));
 
       setRGBLevel(m.r, m.g, m.b, level);
       alertVisible = level > 4;
@@ -2903,7 +2911,7 @@ function updateAnimationHelp(){
 
   const txt=[
     'DIRECT / HORS DIRECT a vitesse constante.',
-    'Un seul fade sur toute la duree : 100 % au depart → 0 % a la fin.',
+    'Boucle : 100 % instantane → fade jusqu a 0 % → retour instantane a 100 %.',
     'Un seul passage sur toute la duree : vert → jaune → rouge.',
     'DIRECT / HORS DIRECT accelere progressivement sur toute la duree.',
     'Deux flashs courts suivis d une pause, repetes pendant la duree.'
@@ -3278,7 +3286,7 @@ void sendMacroSettingsPage(uint8_t i) {
 
   c += "<option value='1'";
   if (m.alertAnimation == ALERT_FADE_TO_BLACK) c += " selected";
-  c += ">Fade 100% → 0% (1 passage)</option>";
+  c += ">Flash 100% → fade 0% (boucle)</option>";
 
   c += "<option value='2'";
   if (m.alertAnimation == ALERT_TRAFFIC_GRADIENT) c += " selected";
