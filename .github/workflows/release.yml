@@ -1,0 +1,135 @@
+name: Publish firmware release
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "ON_AIR_ESP8266.ino"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP8266 core
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://arduino.esp8266.com/stable/package_esp8266com_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp8266:esp8266
+
+      - name: Read firmware version
+        shell: bash
+        run: |
+          VERSION=$(grep -E '^#define FIRMWARE_VERSION "' ON_AIR_ESP8266.ino \
+            | sed -E 's/^#define FIRMWARE_VERSION "([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+
+          if [ -z "$VERSION" ]; then
+            echo "Unable to read FIRMWARE_VERSION"
+            exit 1
+          fi
+
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=v$VERSION" >> "$GITHUB_ENV"
+          echo "VERSION_FILE=$(echo "$VERSION" | tr '.' '_')" >> "$GITHUB_ENV"
+
+      - name: Compile ESP8266 firmware
+        run: |
+          mkdir -p /tmp/ONAIR release build
+          cp ON_AIR_ESP8266.ino /tmp/ONAIR/ONAIR.ino
+
+          arduino-cli compile \
+            --fqbn esp8266:esp8266:nodemcuv2 \
+            --output-dir "$GITHUB_WORKSPACE/build" \
+            /tmp/ONAIR
+
+          cp ON_AIR_ESP8266.ino \
+            "release/ON_AIR_ESP8266_V${VERSION_FILE}.ino"
+
+          cp build/ONAIR.ino.bin \
+            "release/ON_AIR_ESP8266_V${VERSION_FILE}.bin"
+
+          cp build/ONAIR.ino.bin \
+            "release/ON_AIR_ESP8266_OTA.bin"
+
+      - name: Build complete package
+        run: |
+          cp README.md release/
+          cp CHANGELOG.md release/
+
+          cat > release/LISEZ-MOI.txt <<EOF
+          ON AIR ESP8266 V${VERSION}
+
+          Fichiers :
+          - ON_AIR_ESP8266_OTA.bin : fichier OTA a envoyer depuis l interface du boitier
+          - ON_AIR_ESP8266_V${VERSION_FILE}.bin : meme firmware avec numero de version
+          - ON_AIR_ESP8266_V${VERSION_FILE}.ino : source Arduino
+          - README.md : documentation
+          - CHANGELOG.md : historique
+
+          Carte : NodeMCU 1.0 / ESP-12E
+          FQBN : esp8266:esp8266:nodemcuv2
+          EOF
+
+          cd release
+          zip -r "../ON_AIR_ESP8266_V${VERSION_FILE}_COMPLETE.zip" .
+          cd ..
+
+      - name: Build release notes
+        run: |
+          cat > release_notes.md <<EOF
+          ## ON AIR ESP8266 V${VERSION}
+
+          Firmware compile automatiquement par GitHub Actions pour :
+
+          **NodeMCU 1.0 / ESP-12E**
+
+          ### Mise a jour OTA
+
+          Telecharger :
+
+          **ON_AIR_ESP8266_OTA.bin**
+
+          puis ouvrir dans le boitier :
+
+          **Parametres → MISE A JOUR FIRMWARE OTA**
+
+          ### Fichiers
+
+          - ON_AIR_ESP8266_OTA.bin — firmware OTA
+          - ON_AIR_ESP8266_V${VERSION_FILE}.bin — firmware versionne
+          - ON_AIR_ESP8266_V${VERSION_FILE}.ino — source
+          - ON_AIR_ESP8266_V${VERSION_FILE}_COMPLETE.zip — package complet
+          EOF
+
+      - name: Create or update GitHub Release
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "release/ON_AIR_ESP8266_OTA.bin" \
+              "release/ON_AIR_ESP8266_V${VERSION_FILE}.bin" \
+              "release/ON_AIR_ESP8266_V${VERSION_FILE}.ino" \
+              "ON_AIR_ESP8266_V${VERSION_FILE}_COMPLETE.zip" \
+              --clobber
+          else
+            gh release create "$TAG" \
+              "release/ON_AIR_ESP8266_OTA.bin" \
+              "release/ON_AIR_ESP8266_V${VERSION_FILE}.bin" \
+              "release/ON_AIR_ESP8266_V${VERSION_FILE}.ino" \
+              "ON_AIR_ESP8266_V${VERSION_FILE}_COMPLETE.zip" \
+              --target "$GITHUB_SHA" \
+              --title "ON AIR ESP8266 V${VERSION}" \
+              --notes-file release_notes.md \
+              --latest
+          fi
