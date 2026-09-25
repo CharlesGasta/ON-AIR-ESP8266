@@ -1,0 +1,51 @@
+name: Build ESP8266 firmware
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "ON_AIR_ESP8266.ino"
+      - ".github/workflows/build-firmware.yml"
+  pull_request:
+    paths:
+      - "ON_AIR_ESP8266.ino"
+      - ".github/workflows/build-firmware.yml"
+  workflow_dispatch:
+
+jobs:
+  esp8266-firmware:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP8266 core
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://arduino.esp8266.com/stable/package_esp8266com_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp8266:esp8266
+
+      - name: Compile firmware
+        run: |
+          mkdir -p /tmp/ONAIR build
+          cp ON_AIR_ESP8266.ino /tmp/ONAIR/ONAIR.ino
+
+          arduino-cli compile \
+            --fqbn esp8266:esp8266:nodemcuv2 \
+            --output-dir "$GITHUB_WORKSPACE/build" \
+            /tmp/ONAIR
+
+          cp ON_AIR_ESP8266.ino build/ON_AIR_ESP8266.ino
+          cp build/ONAIR.ino.bin build/ON_AIR_ESP8266_OTA.bin
+
+      - name: Upload source + OTA firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: ON_AIR_ESP8266_OTA
+          path: |
+            build/ON_AIR_ESP8266.ino
+            build/ON_AIR_ESP8266_OTA.bin
+          if-no-files-found: error
