@@ -1,5 +1,17 @@
 # Changelog
 
+## V2.11.0
+
+- indicateur RGB des étapes de démarrage
+- bleu : point d'accès / serveur local
+- orange : recherche et connexion au Wi-Fi externe
+- violet : initialisation mDNS / adresse .local
+- vert : prêt, puis extinction automatique
+- rouge : erreur de démarrage du point d'accès
+- indicateur non bloquant : il ne ralentit pas la connexion réseau
+- toute commande DIRECT / ALERTE / OFF prend immédiatement la priorité
+
+
 ## V2.10.0
 
 - animation Fade modifiée en boucle
