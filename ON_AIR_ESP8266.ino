@@ -31,7 +31,7 @@
 #include <ESP8266mDNS.h>
 #include <ESP8266HTTPUpdateServer.h>
 
-#define FIRMWARE_VERSION "2.10.0 LOOP FADE ALERT"
+#define FIRMWARE_VERSION "2.11.0 STARTUP STATUS LED"
 
 const uint8_t PIN_RED   = D2;
 const uint8_t PIN_GREEN = D1;
@@ -1505,6 +1505,29 @@ bool uploadAccepted = false;
 
 bool mdnsStarted = false;
 bool externalConnectStarted = false;
+
+// Indicateur visuel de demarrage.
+// BLEU   : point d'acces / serveur local en initialisation
+// ORANGE : recherche / connexion au Wi-Fi externe
+// VIOLET : enregistrement mDNS (.local)
+// VERT   : pret, puis extinction automatique
+// ROUGE  : erreur critique du point d'acces
+enum StartupIndicatorState : uint8_t {
+  STARTUP_IND_OFF = 0,
+  STARTUP_IND_AP,
+  STARTUP_IND_WIFI,
+  STARTUP_IND_MDNS,
+  STARTUP_IND_READY,
+  STARTUP_IND_ERROR
+};
+
+StartupIndicatorState startupIndicatorState = STARTUP_IND_OFF;
+bool startupIndicatorVisible = false;
+bool startupSequenceComplete = false;
+unsigned long startupIndicatorLastToggle = 0;
+unsigned long startupReadyStartedAt = 0;
+
+bool externalConnectStarted = false;
 unsigned long lastExternalReconnectAt = 0;
 const unsigned long EXTERNAL_RECONNECT_MS = 30000UL;
 int currentKnownWiFiAttempt = -1;
@@ -1984,6 +2007,145 @@ void ledsOff() {
   analogWrite(PIN_BLUE, 0);
 }
 
+
+void renderStartupIndicatorColor() {
+  switch (startupIndicatorState) {
+    case STARTUP_IND_AP:
+      setRGBLevel(0, 90, 255, 28);
+      break;
+
+    case STARTUP_IND_WIFI:
+      setRGBLevel(255, 95, 0, 32);
+      break;
+
+    case STARTUP_IND_MDNS:
+      setRGBLevel(170, 0, 255, 30);
+      break;
+
+    case STARTUP_IND_READY:
+      setRGBLevel(0, 255, 45, 35);
+      break;
+
+    case STARTUP_IND_ERROR:
+      setRGBLevel(255, 0, 0, 40);
+      break;
+
+    case STARTUP_IND_OFF:
+    default:
+      ledsOff();
+      break;
+  }
+}
+
+void cancelStartupIndicator() {
+  startupSequenceComplete = true;
+  startupIndicatorState = STARTUP_IND_OFF;
+  startupIndicatorVisible = false;
+}
+
+void setStartupIndicatorState(StartupIndicatorState state) {
+  if (!config.startupAnimation || startupSequenceComplete) return;
+  if (startupIndicatorState == state) return;
+
+  startupIndicatorState = state;
+  startupIndicatorVisible = true;
+  startupIndicatorLastToggle = millis();
+
+  if (state == STARTUP_IND_READY) {
+    startupReadyStartedAt = millis();
+  }
+
+  renderStartupIndicatorColor();
+
+  switch (state) {
+    case STARTUP_IND_AP:
+      Serial.println("[STARTUP LED] BLEU = demarrage AP / serveur");
+      break;
+    case STARTUP_IND_WIFI:
+      Serial.println("[STARTUP LED] ORANGE = connexion Wi-Fi externe");
+      break;
+    case STARTUP_IND_MDNS:
+      Serial.println("[STARTUP LED] VIOLET = initialisation mDNS");
+      break;
+    case STARTUP_IND_READY:
+      Serial.println("[STARTUP LED] VERT = pret");
+      break;
+    case STARTUP_IND_ERROR:
+      Serial.println("[STARTUP LED] ROUGE = erreur demarrage");
+      break;
+    default:
+      break;
+  }
+}
+
+void updateStartupIndicatorNetworkState() {
+  if (!config.startupAnimation || startupSequenceComplete) return;
+
+  // Une commande utilisateur devient prioritaire sur l'animation de boot.
+  if (alertRunning || settingsPreviewActive || activeMacro >= 0 || outputEnabled) {
+    cancelStartupIndicator();
+    return;
+  }
+
+  if (!config.externalWiFiEnabled || config.knownWiFiCount == 0) {
+    setStartupIndicatorState(STARTUP_IND_READY);
+    return;
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    setStartupIndicatorState(STARTUP_IND_WIFI);
+    return;
+  }
+
+  if (!mdnsStarted) {
+    setStartupIndicatorState(STARTUP_IND_MDNS);
+    return;
+  }
+
+  setStartupIndicatorState(STARTUP_IND_READY);
+}
+
+void updateStartupIndicator() {
+  if (!config.startupAnimation || startupSequenceComplete) return;
+  if (startupIndicatorState == STARTUP_IND_OFF) return;
+
+  unsigned long now = millis();
+
+  if (startupIndicatorState == STARTUP_IND_READY) {
+    // Trois clignotements verts rapides, puis noir.
+    if (now - startupReadyStartedAt >= 1050UL) {
+      startupSequenceComplete = true;
+      startupIndicatorState = STARTUP_IND_OFF;
+      startupIndicatorVisible = false;
+      ledsOff();
+      Serial.println("[STARTUP LED] Termine -> NOIR");
+      return;
+    }
+  }
+
+  unsigned long interval = 350UL;
+
+  switch (startupIndicatorState) {
+    case STARTUP_IND_AP:    interval = 300UL; break;
+    case STARTUP_IND_WIFI:  interval = 450UL; break;
+    case STARTUP_IND_MDNS:  interval = 180UL; break;
+    case STARTUP_IND_READY: interval = 175UL; break;
+    case STARTUP_IND_ERROR: interval = 120UL; break;
+    default: break;
+  }
+
+  if (now - startupIndicatorLastToggle < interval) return;
+
+  startupIndicatorLastToggle = now;
+  startupIndicatorVisible = !startupIndicatorVisible;
+
+  if (startupIndicatorVisible) {
+    renderStartupIndicatorColor();
+  } else {
+    ledsOff();
+  }
+}
+
 void renderMacroDirect(uint8_t i) {
   if (i >= MACRO_COUNT) return;
 
@@ -2024,6 +2186,7 @@ void renderCurrentOutput() {
 void applyMacro(uint8_t i) {
   if (i >= MACRO_COUNT) return;
 
+  cancelStartupIndicator();
   settingsPreviewActive = false;
   alertRunning = false;
   alertMacro = -1;
@@ -2039,6 +2202,7 @@ void applyMacro(uint8_t i) {
 void applyMacroIdle(uint8_t i) {
   if (i >= MACRO_COUNT) return;
 
+  cancelStartupIndicator();
   settingsPreviewActive = false;
   alertRunning = false;
   alertMacro = -1;
@@ -2052,6 +2216,7 @@ void applyMacroIdle(uint8_t i) {
 }
 
 void blackout() {
+  cancelStartupIndicator();
   settingsPreviewActive = false;
   alertRunning = false;
   alertTestMode = false;
@@ -2066,6 +2231,7 @@ void blackout() {
 void startAlert(uint8_t i, bool testMode = false) {
   if (i >= MACRO_COUNT) return;
 
+  cancelStartupIndicator();
   settingsPreviewActive = false;
 
   alertRunning = true;
@@ -2565,7 +2731,7 @@ void sendControlPage() {
   chunk +=
     "</title>"
     "<style>html,body{margin:0;background:#090b0e;color:#f4f6f8}</style>"
-    "<link rel='stylesheet' href='/style.css?v=29'>"
+    "<link rel='stylesheet' href='/style.css?v=211'>"
     "</head><body>"
     "<div class='top'><div class='title'>";
 
@@ -3006,7 +3172,7 @@ void sendSettingsPage() {
 
   if (config.startupAnimation) c += " checked";
 
-  c += "> Animation de demarrage</label>";
+  c += "> Indicateur couleur des etapes de demarrage</label>";
   c += "<button class='save' type='submit'>ENREGISTRER PARAMETRES GENERAUX</button>";
   c += "<div class='small' style='margin-top:10px'>Changer le SSID ou le mot de passe redemarre l ESP.</div>";
   c += "</div></form>";
@@ -4664,6 +4830,7 @@ void startAccessPoint() {
     Serial.println("[WIFI AP] Sleep Wi-Fi desactive pour stabilite");
 
   } else {
+    setStartupIndicatorState(STARTUP_IND_ERROR);
     Serial.println("[WIFI AP] ECHEC du reseau securise");
     Serial.println("[WIFI AP] Tentative ONAIR-RECOVERY sans mot de passe");
 
@@ -4841,6 +5008,8 @@ void startExternalWiFi() {
 void startMDNSIfPossible() {
   if (mdnsStarted || WiFi.status() != WL_CONNECTED) return;
 
+  setStartupIndicatorState(STARTUP_IND_MDNS);
+
   if (MDNS.begin(MDNS_HOSTNAME)) {
     MDNS.addService("http", "tcp", 80);
     mdnsStarted = true;
@@ -4904,13 +5073,24 @@ void setup() {
 
   loadConfig();
 
+  // Etat initial propre, puis indicateur de progression sans ralentir le boot.
+  blackout();
+  startupSequenceComplete = false;
+  setStartupIndicatorState(STARTUP_IND_AP);
+
   // Le Wi-Fi apparait immediatement au demarrage.
   startAccessPoint();
   setupWebServer();
+
+  if (config.externalWiFiEnabled && config.knownWiFiCount > 0) {
+    setStartupIndicatorState(STARTUP_IND_WIFI);
+  }
+
   startExternalWiFi();
 
-  startupAnimation();
-  blackout();
+  if (!config.externalWiFiEnabled || config.knownWiFiCount == 0) {
+    setStartupIndicatorState(STARTUP_IND_READY);
+  }
 
   Serial.println("[READY] Wi-Fi autonome : " + String(config.apSSID));
   Serial.println("[READY] Acces direct GARANTI : http://192.168.4.1");
@@ -4929,7 +5109,10 @@ void loop() {
   updateSettingsPreview();
   updateWiFiScan();
   applyPendingExternalWiFi();
+
+  updateStartupIndicatorNetworkState();
   updateExternalWiFi();
+  updateStartupIndicator();
 
   if (mdnsStarted) {
     MDNS.update();
