@@ -1527,7 +1527,6 @@ bool startupSequenceComplete = false;
 unsigned long startupIndicatorLastToggle = 0;
 unsigned long startupReadyStartedAt = 0;
 
-bool externalConnectStarted = false;
 unsigned long lastExternalReconnectAt = 0;
 const unsigned long EXTERNAL_RECONNECT_MS = 30000UL;
 int currentKnownWiFiAttempt = -1;
