@@ -48,6 +48,18 @@ Chaque canal pilote un MOSFET N logique :
 - Drain vers canal R/G/B du ruban
 - ruban RGB à anode commune +5 V
 
+## Indicateur de démarrage
+
+Quand l'indicateur de démarrage est activé :
+
+- 🔵 **bleu** : point d'accès / serveur local en cours de démarrage
+- 🟠 **orange** : recherche / connexion au Wi-Fi externe
+- 🟣 **violet** : initialisation mDNS (`.local`)
+- 🟢 **vert** : système prêt ; trois clignotements puis extinction
+- 🔴 **rouge** : erreur du point d'accès
+
+L'indicateur est non bloquant et une commande DIRECT / ALERTE / OFF reste prioritaire.
+
 ## Firmware
 
 Source principale :
@@ -73,7 +85,7 @@ Envoyer le fichier :
 
 ## Version actuelle
 
-**V2.10.0 — LOOP FADE ALERT**
+**V2.11.0 — STARTUP STATUS LED**
 
 ## Auteur
 
