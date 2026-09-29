@@ -60,6 +60,19 @@ Quand l'indicateur de démarrage est activé :
 
 L'indicateur est non bloquant et une commande DIRECT / ALERTE / OFF reste prioritaire.
 
+## Portail captif iPhone
+
+Quand un iPhone ou un iPad se connecte directement au Wi-Fi de l'ESP, le boîtier utilise un DNS wildcard et les URL de détection de portail captif pour déclencher automatiquement la fenêtre **Se connecter au réseau** d'iOS.
+
+Principe identique au projet CBR900RR :
+
+- connexion au Wi-Fi de l'ESP ;
+- iOS teste l'accès Internet ;
+- le DNS de l'ESP renvoie la requête vers `192.168.4.1` ;
+- l'interface ON AIR s'ouvre automatiquement dans la fenêtre captive.
+
+L'accès manuel `http://192.168.4.1` reste disponible.
+
 ## Firmware
 
 Source principale :
@@ -85,7 +98,7 @@ Envoyer le fichier :
 
 ## Version actuelle
 
-**V2.11.0 — STARTUP STATUS LED**
+**V2.12.0 — IOS CAPTIVE PORTAL**
 
 ## Auteur
 
