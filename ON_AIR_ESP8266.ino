@@ -26,12 +26,13 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <DNSServer.h>
 #include <EEPROM.h>
 #include <LittleFS.h>
 #include <ESP8266mDNS.h>
 #include <ESP8266HTTPUpdateServer.h>
 
-#define FIRMWARE_VERSION "2.11.0 STARTUP STATUS LED"
+#define FIRMWARE_VERSION "2.12.0 IOS CAPTIVE PORTAL"
 
 const uint8_t PIN_RED   = D2;
 const uint8_t PIN_GREEN = D1;
@@ -1475,6 +1476,7 @@ bool configImportAccepted = false;
 bool configImportApplied = false;
 
 ESP8266WebServer server(80);
+DNSServer dnsServer;
 ESP8266HTTPUpdateServer httpUpdater;
 File uploadFile;
 
@@ -4690,6 +4692,19 @@ void handleStyleCSS() {
   );
 }
 
+void redirectCaptivePortal() {
+  // Meme principe que le portail captif du projet CBR :
+  // toutes les requetes de detection Internet sont renvoyees vers l'ESP.
+  String target = String("http://") + AP_IP.toString() + "/";
+
+  Serial.println("[CAPTIVE] " + server.uri() + " -> " + target);
+
+  server.sendHeader("Location", target, true);
+  server.sendHeader("Cache-Control", "no-store");
+  server.sendHeader("Connection", "close");
+  server.send(302, "text/plain", "");
+}
+
 void setupWebServer() {
   server.on("/style.css",HTTP_GET,handleStyleCSS);
 
@@ -4751,42 +4766,30 @@ void setupWebServer() {
   server.on("/saveMacro",HTTP_GET,redirectHome);
   server.on("/uploadLogo",HTTP_GET,redirectHome);
 
-  // Reponses propres aux tests de connectivite des telephones.
-  // On ne redirige plus ces requetes vers l'interface :
-  // cela pouvait provoquer des boucles de portail captif sur certains mobiles.
-  server.on("/generate_204",HTTP_GET,[](){
-    server.send(204,"text/plain","");
-  });
+  // Portail captif : iPhone / iPad / Android / Windows.
+  // Le DNS wildcard fait pointer les domaines de test Internet vers 192.168.4.1.
+  // Une reponse differente de celle attendue force iOS a ouvrir automatiquement
+  // la fenetre "Se connecter au reseau", comme sur le projet CBR.
+  server.on("/generate_204",HTTP_GET,redirectCaptivePortal);
+  server.on("/gen_204",HTTP_GET,redirectCaptivePortal);
+  server.on("/hotspot-detect.html",HTTP_GET,redirectCaptivePortal);
+  server.on("/library/test/success.html",HTTP_GET,redirectCaptivePortal);
+  server.on("/success.html",HTTP_GET,redirectCaptivePortal);
+  server.on("/connecttest.txt",HTTP_GET,redirectCaptivePortal);
+  server.on("/ncsi.txt",HTTP_GET,redirectCaptivePortal);
+  server.on("/fwlink",HTTP_GET,redirectCaptivePortal);
+  server.on("/redirect",HTTP_GET,redirectCaptivePortal);
 
-  server.on("/hotspot-detect.html",HTTP_GET,[](){
-    server.send(
-      200,
-      "text/html",
-      "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"
-    );
-  });
-
-  server.on("/connecttest.txt",HTTP_GET,[](){
-    server.send(200,"text/plain","Microsoft Connect Test");
-  });
-
-  server.on("/ncsi.txt",HTTP_GET,[](){
-    server.send(200,"text/plain","Microsoft NCSI");
-  });
-
-  server.on("/fwlink",HTTP_GET,[](){
-    server.send(204,"text/plain","");
-  });
-
-  // Une URL inconnue retourne une vraie 404.
-  // Pas de redirection automatique = pas de boucle navigateur.
-  server.onNotFound([](){
-    Serial.println("[WEB] 404 " + server.uri());
-    server.sendHeader("Connection","close");
-    server.send(404,"text/plain","404");
-  });
+  // Comme sur le CBR, toute URL inconnue est ramenee vers l'interface.
+  server.onNotFound(redirectCaptivePortal);
 
   httpUpdater.setup(&server, "/update");
+
+  // DNS wildcard necessaire au popup de portail captif iOS.
+  // Les clients connectes a l'AP utilisent l'ESP comme DNS et tous les domaines
+  // inconnus sont renvoyes vers 192.168.4.1.
+  dnsServer.start(53, "*", AP_IP);
+  Serial.println("[CAPTIVE] DNS wildcard actif sur 192.168.4.1");
 
   server.begin();
   Serial.println("[WEB] Serveur HTTP demarre");
@@ -5101,6 +5104,9 @@ void setup() {
 }
 
 void loop() {
+  // Portail captif : traiter les requetes DNS avant le HTTP.
+  dnsServer.processNextRequest();
+
   // Le serveur HTTP est toujours prioritaire.
   server.handleClient();
 
