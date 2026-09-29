@@ -1,5 +1,15 @@
 # Changelog
 
+## V2.12.0
+
+- portail captif Wi-Fi comme sur le projet CBR900RR
+- DNS wildcard via DNSServer vers 192.168.4.1
+- détection iPhone / iPad : ouverture automatique de la fenêtre de connexion au réseau
+- prise en charge des sondes captive portal Apple, Android et Windows
+- toute URL inconnue renvoie vers l'interface ON AIR
+- accès manuel 192.168.4.1 toujours disponible
+
+
 ## V2.11.0
 
 - indicateur RGB des étapes de démarrage
