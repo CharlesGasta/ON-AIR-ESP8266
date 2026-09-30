@@ -62,16 +62,13 @@ L'indicateur est non bloquant et une commande DIRECT / ALERTE / OFF reste priori
 
 ## Portail captif iPhone
 
-Quand un iPhone ou un iPad se connecte directement au Wi-Fi de l'ESP, le boîtier utilise un DNS wildcard et les URL de détection de portail captif pour déclencher automatiquement la fenêtre **Se connecter au réseau** d'iOS.
+Quand un iPhone rejoint directement le Wi-Fi du boîtier, le DNS wildcard tente de déclencher l'assistant captif Apple. Le boîtier renvoie à `hotspot-detect.html` une petite page HTML avec ouverture automatique de `http://192.168.4.1/settings`.
 
-Principe identique au projet CBR900RR :
+La décision d'afficher une fenêtre automatique appartient à iOS : elle peut ne pas apparaître si le réseau est déjà mémorisé, si l'accès privé/VPN perturbe les sondes ou selon la version d'iOS.
 
-- connexion au Wi-Fi de l'ESP ;
-- iOS teste l'accès Internet ;
-- le DNS de l'ESP renvoie la requête vers `192.168.4.1` ;
-- l'interface ON AIR s'ouvre automatiquement dans la fenêtre captive.
+**En cas d'absence de fenêtre :** Paramètres iPhone → Wi-Fi → (i) → Oublier ce réseau, puis reconnecter. L'accès manuel à `http://192.168.4.1/settings` reste permanent.
 
-L'accès manuel `http://192.168.4.1` reste disponible.
+Diagnostic depuis le réseau ESP : `http://192.168.4.1/api/captiveStatus` donne les nombres de sondes iOS/autres et le nombre de clients AP. Le moniteur série affiche `[CAPTIVE IOS]` à chaque sonde Apple reçue.
 
 ## Firmware
 
@@ -98,7 +95,7 @@ Envoyer le fichier :
 
 ## Version actuelle
 
-**V2.12.0 — IOS CAPTIVE PORTAL**
+**V2.13.0 — IOS CAPTIVE PORTAL FIX**
 
 ## Auteur
 
