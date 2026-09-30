@@ -32,7 +32,7 @@
 #include <ESP8266mDNS.h>
 #include <ESP8266HTTPUpdateServer.h>
 
-#define FIRMWARE_VERSION "2.12.0 IOS CAPTIVE PORTAL"
+#define FIRMWARE_VERSION "2.13.0 IOS CAPTIVE PORTAL FIX"
 
 const uint8_t PIN_RED   = D2;
 const uint8_t PIN_GREEN = D1;
@@ -4692,17 +4692,58 @@ void handleStyleCSS() {
   );
 }
 
-void redirectCaptivePortal() {
-  // Meme principe que le portail captif du projet CBR :
-  // toutes les requetes de detection Internet sont renvoyees vers l'ESP.
-  String target = String("http://") + AP_IP.toString() + "/";
+// Page volontairement tres legere pour iOS CNA : renvoie du HTML non vide,
+// SANS le mot 'Success' attendu par le test Internet Apple.
+// Si iOS ouvre sa petite fenetre CNA, elle va vers les parametres.
+static const char IOS_CAPTIVE_PAGE[] PROGMEM = R"PORTAL(
+<!doctype html><html><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<meta http-equiv='Cache-Control' content='no-store'>
+<meta http-equiv='refresh' content='1;url=http://192.168.4.1/settings'>
+<title>ON AIR - Configuration Wi-Fi</title>
+<style>
+body{background:#0c1015;color:white;font-family:Arial,sans-serif;text-align:center;padding:28px 14px}
+main{max-width:420px;margin:20px auto;background:#171d24;border:1px solid #38414e;
+border-radius:16px;padding:20px}a{display:block;color:white;text-decoration:none;
+background:#236bc4;padding:15px;margin:12px 0;border-radius:12px;font-weight:bold}
+a.alt{background:#333c49}small{color:#afb9c5}
+</style></head><body><main>
+<h2>ON AIR</h2><p>Ouverture des parametres...</p>
+<a href='http://192.168.4.1/settings'>OUVRIR LES PARAMETRES</a>
+<a class='alt' href='http://192.168.4.1/'>OUVRIR LE CONTROLE</a>
+<small>En cas de blocage, utilise http://192.168.4.1/settings</small>
+</main></body></html>
+)PORTAL";
 
-  Serial.println("[CAPTIVE] " + server.uri() + " -> " + target);
+uint32_t iosCaptiveProbeCount = 0;
+uint32_t otherCaptiveProbeCount = 0;
 
-  server.sendHeader("Location", target, true);
-  server.sendHeader("Cache-Control", "no-store");
+void sendAppleCaptivePortal() {
+  ++iosCaptiveProbeCount;
+  Serial.println("[CAPTIVE IOS] Requete " + server.uri() +
+                 " | Host=" + server.hostHeader() +
+                 " | probes=" + String(iosCaptiveProbeCount) +
+                 " | heap=" + String(ESP.getFreeHeap()));
+  server.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "0");
   server.sendHeader("Connection", "close");
-  server.send(302, "text/plain", "");
+  // IMPORTANT : 200 + vrai contenu HTML (non vide), pas 302 au corps vide.
+  server.send_P(200, "text/html; charset=utf-8", IOS_CAPTIVE_PAGE);
+}
+
+void redirectCaptivePortal() {
+  ++otherCaptiveProbeCount;
+  Serial.println("[CAPTIVE] " + server.uri() +
+                 " | Host=" + server.hostHeader() +
+                 " | probes=" + String(otherCaptiveProbeCount));
+  server.sendHeader("Location", "http://192.168.4.1/captive", true);
+  server.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  server.sendHeader("Connection", "close");
+  // Certaines versions de CNA ne suivent pas les redirections a corps vide.
+  server.send(302, "text/html; charset=utf-8",
+              "<!doctype html><html><body><a href='http://192.168.4.1/captive'>"
+              "ON AIR - Ouvrir la configuration</a></body></html>");
 }
 
 void setupWebServer() {
@@ -4738,7 +4779,7 @@ void setupWebServer() {
   server.on("/config/import",HTTP_POST,handleConfigImportComplete,handleConfigImportData);
   server.on("/api/status",HTTP_GET,handleStatus);
   server.on("/api/uihealth",HTTP_GET,[](){
-    server.send(200,"application/json","{\"css\":true,\"version\":\"2.9\"}");
+    server.send(200,"application/json","{\"css\":true,\"version\":\"2.13\"}");
   });
   server.on("/api/direct",HTTP_GET,handleDirect);
   server.on("/api/alert",HTTP_GET,handleAlert);
@@ -4766,21 +4807,34 @@ void setupWebServer() {
   server.on("/saveMacro",HTTP_GET,redirectHome);
   server.on("/uploadLogo",HTTP_GET,redirectHome);
 
-  // Portail captif : iPhone / iPad / Android / Windows.
-  // Le DNS wildcard fait pointer les domaines de test Internet vers 192.168.4.1.
-  // Une reponse differente de celle attendue force iOS a ouvrir automatiquement
-  // la fenetre "Se connecter au reseau", comme sur le projet CBR.
+  // Apple's Captive Network Assistant (CNA) attend une REPONSE HTML
+  // reelle a hotspot-detect.html, et non une redirection HTTP vide.
+  server.on("/hotspot-detect.html",HTTP_GET,sendAppleCaptivePortal);
+  server.on("/library/test/success.html",HTTP_GET,sendAppleCaptivePortal);
+  server.on("/success.html",HTTP_GET,sendAppleCaptivePortal);
+  server.on("/captive",HTTP_GET,sendAppleCaptivePortal);
+
+  // Android / Windows utilisent des sondes differentes.
   server.on("/generate_204",HTTP_GET,redirectCaptivePortal);
   server.on("/gen_204",HTTP_GET,redirectCaptivePortal);
-  server.on("/hotspot-detect.html",HTTP_GET,redirectCaptivePortal);
-  server.on("/library/test/success.html",HTTP_GET,redirectCaptivePortal);
-  server.on("/success.html",HTTP_GET,redirectCaptivePortal);
   server.on("/connecttest.txt",HTTP_GET,redirectCaptivePortal);
   server.on("/ncsi.txt",HTTP_GET,redirectCaptivePortal);
   server.on("/fwlink",HTTP_GET,redirectCaptivePortal);
   server.on("/redirect",HTTP_GET,redirectCaptivePortal);
 
-  // Comme sur le CBR, toute URL inconnue est ramenee vers l'interface.
+  // Diagnostic accessible sans navigateur CNA.
+  server.on("/api/captiveStatus",HTTP_GET,[](){
+    char buf[125];
+    snprintf(buf,sizeof(buf),
+      "{\"ios\":%lu,\"other\":%lu,\"ap_clients\":%u}",
+      (unsigned long)iosCaptiveProbeCount,
+      (unsigned long)otherCaptiveProbeCount,
+      (unsigned int)WiFi.softAPgetStationNum());
+    server.sendHeader("Cache-Control","no-store");
+    server.send(200,"application/json",buf);
+  });
+
+  // Les adresses inconnues renvoient vers le mini portail.
   server.onNotFound(redirectCaptivePortal);
 
   httpUpdater.setup(&server, "/update");
@@ -5004,7 +5058,19 @@ void startExternalWiFi() {
     return;
   }
 
-  connectBestKnownWiFi();
+  // IMPORTANT POUR IPHONE :
+  // Ne pas lancer de scan Wi-Fi synchrone pendant que le telephone effectue
+  // sa premiere detection captive. WiFi.begin() rend la main immediatement.
+  // Le scan du meilleur reseau reste disponible pour la reconnexion plus tard.
+  if (WiFi.getMode() != WIFI_AP_STA) WiFi.mode(WIFI_AP_STA);
+  WiFi.hostname(MDNS_HOSTNAME);
+  WiFi.begin(config.knownWiFi[0].ssid,config.knownWiFi[0].password);
+  currentKnownWiFiAttempt = 0;
+  externalConnectStarted = true;
+  lastExternalReconnectAt = millis();
+
+  Serial.println("[WIFI EXT] Connexion directe sans scan bloquant : " +
+                 String(config.knownWiFi[0].ssid));
 }
 
 void startMDNSIfPossible() {
