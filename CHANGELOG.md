@@ -1,5 +1,16 @@
 # Changelog
 
+## V2.13.0
+
+- portail captif iOS : vrai HTML 200 non vide aux sondes Apple au lieu du redirect 302 vide
+- fenêtre captive dirigée automatiquement vers `/settings` (lien de secours présent)
+- connexion initiale Wi-Fi externe sans scan synchrone, pour servir les requêtes iPhone dès l'association
+- sondes Android / Windows conservées avec redirection HTML non vide
+- nouveau diagnostic `/api/captiveStatus` et logs `[CAPTIVE IOS]`
+- résolution DNS wildcard de l'AP conservée
+- l'ouverture automatique reste décidée par iOS ; accès manuel `http://192.168.4.1/settings`
+
+
 ## V2.12.0
 
 - portail captif Wi-Fi comme sur le projet CBR900RR
