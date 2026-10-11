@@ -1,5 +1,19 @@
 # Changelog
 
+## V3.0.0
+
+- passage du RGB analogique à un ruban adressable WS2812E 5 V
+- ESP8266 conservé, DATA sur D5 / GPIO14
+- géométrie du logo Damien : 500 mm = 200 + 50 + 200 + 50 mm
+- 30 LED à 60 LED/m : 12 haut + 3 droite + 12 bas + 3 gauche
+- suppression logicielle des trois sorties PWM RGB et des trois MOSFETs
+- ajout de la bibliothèque Adafruit NeoPixel dans les builds GitHub
+- conservation des couleurs, intensités, DIRECT / HORS DIRECT, Wi-Fi, portail captif et OTA
+- ajout animation ALERTE "Logo : point lumineux tournant"
+- ajout animation ALERTE "Logo : dessin progressif du contour"
+- documentation matérielle dans `HARDWARE_ADDRESSABLE.md`
+
+
 ## V2.13.0
 
 - portail captif iOS : vrai HTML 200 non vide aux sondes Apple au lieu du redirect 302 vide
