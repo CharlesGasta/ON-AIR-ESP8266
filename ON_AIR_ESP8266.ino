@@ -31,13 +31,37 @@
 #include <LittleFS.h>
 #include <ESP8266mDNS.h>
 #include <ESP8266HTTPUpdateServer.h>
+#include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "2.13.0 IOS CAPTIVE PORTAL FIX"
+#define FIRMWARE_VERSION "3.0.0 ADDRESSABLE LOGO 30LED"
 
-const uint8_t PIN_RED   = D2;
-const uint8_t PIN_GREEN = D1;
-const uint8_t PIN_BLUE  = D5;
-const int PWM_MAX = 1023;
+// ============================================================
+// RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
+// 500 mm au total : 200 + 50 + 200 + 50 mm.
+// Ruban 60 LED/m -> 30 LED exactement.
+// Ordre logique autour du contour :
+//   0..11  = haut   (gauche -> droite)
+//   12..14 = droite (haut -> bas)
+//   15..26 = bas    (droite -> gauche)
+//   27..29 = gauche (bas -> haut)
+// ============================================================
+const uint8_t LED_DATA_PIN = D5;       // GPIO14
+const uint16_t LED_COUNT = 30;
+const uint8_t LED_TOP_COUNT = 12;
+const uint8_t LED_RIGHT_COUNT = 3;
+const uint8_t LED_BOTTOM_COUNT = 12;
+const uint8_t LED_LEFT_COUNT = 3;
+
+static_assert(
+  LED_TOP_COUNT + LED_RIGHT_COUNT + LED_BOTTOM_COUNT + LED_LEFT_COUNT == LED_COUNT,
+  "La geometrie du logo doit totaliser 30 LED"
+);
+
+Adafruit_NeoPixel pixels(
+  LED_COUNT,
+  LED_DATA_PIN,
+  NEO_GRB + NEO_KHZ800
+);
 
 const char* DEFAULT_AP_SSID = "ON_AIR-MOC";
 const char* DEFAULT_AP_PASSWORD = "12345678";
@@ -1354,7 +1378,9 @@ enum AlertAnimation : uint8_t {
   ALERT_FADE_TO_BLACK = 1,
   ALERT_TRAFFIC_GRADIENT = 2,
   ALERT_ACCELERATING = 3,
-  ALERT_DOUBLE_FLASH = 4
+  ALERT_DOUBLE_FLASH = 4,
+  ALERT_LOGO_CHASE = 5,
+  ALERT_LOGO_DRAW = 6
 };
 
 // V2.6 : choix d'animation d'alerte par macro.
@@ -1975,11 +2001,32 @@ void loadConfig() {
 
     config.macro[i].intensity = constrain(config.macro[i].intensity, 0, 100);
     config.macro[i].idleIntensity = constrain(config.macro[i].idleIntensity, 0, 100);
-    config.macro[i].alertAnimation = constrain(config.macro[i].alertAnimation, (uint8_t)ALERT_CLASSIC, (uint8_t)ALERT_DOUBLE_FLASH);
+    config.macro[i].alertAnimation = constrain(config.macro[i].alertAnimation, (uint8_t)ALERT_CLASSIC, (uint8_t)ALERT_LOGO_DRAW);
     config.macro[i].alertDuration = constrain(config.macro[i].alertDuration, 1, 60);
     config.macro[i].blinkMs = constrain(config.macro[i].blinkMs, 100, 2000);
     config.macro[i].alertEndOn = true;
   }
+}
+
+uint8_t scaleByPercent(uint8_t value, uint8_t percent) {
+  return (uint8_t)(((uint16_t)value * constrain((int)percent, 0, 100)) / 100U);
+}
+
+uint32_t pixelColorLevel(uint8_t r, uint8_t g, uint8_t b, uint8_t intensity) {
+  return pixels.Color(
+    scaleByPercent(r, intensity),
+    scaleByPercent(g, intensity),
+    scaleByPercent(b, intensity)
+  );
+}
+
+void setPixelLevel(uint16_t index,
+                   uint8_t r,
+                   uint8_t g,
+                   uint8_t b,
+                   uint8_t intensity) {
+  if (index >= LED_COUNT) return;
+  pixels.setPixelColor(index, pixelColorLevel(r,g,b,intensity));
 }
 
 void setRGBLevel(uint8_t r, uint8_t g, uint8_t b, uint8_t intensity) {
@@ -1988,13 +2035,13 @@ void setRGBLevel(uint8_t r, uint8_t g, uint8_t b, uint8_t intensity) {
   currentLedB = b;
   currentLedIntensity = constrain((int)intensity, 0, 100);
 
-  float f = currentLedIntensity / 100.0f;
-  int rr = map((int)(r * f), 0, 255, 0, PWM_MAX);
-  int gg = map((int)(g * f), 0, 255, 0, PWM_MAX);
-  int bb = map((int)(b * f), 0, 255, 0, PWM_MAX);
-  analogWrite(PIN_RED, rr);
-  analogWrite(PIN_GREEN, gg);
-  analogWrite(PIN_BLUE, bb);
+  uint32_t color = pixelColorLevel(r,g,b,currentLedIntensity);
+
+  for (uint16_t i = 0; i < LED_COUNT; i++) {
+    pixels.setPixelColor(i, color);
+  }
+
+  pixels.show();
 }
 
 void ledsOff() {
@@ -2003,9 +2050,86 @@ void ledsOff() {
   currentLedB = 0;
   currentLedIntensity = 0;
 
-  analogWrite(PIN_RED, 0);
-  analogWrite(PIN_GREEN, 0);
-  analogWrite(PIN_BLUE, 0);
+  pixels.clear();
+  pixels.show();
+}
+
+void updateLedStatusReference(uint8_t r,
+                              uint8_t g,
+                              uint8_t b,
+                              uint8_t intensity) {
+  currentLedR = r;
+  currentLedG = g;
+  currentLedB = b;
+  currentLedIntensity = constrain((int)intensity, 0, 100);
+}
+
+void renderLogoChase(uint8_t r,
+                     uint8_t g,
+                     uint8_t b,
+                     uint8_t intensity,
+                     unsigned long elapsed,
+                     unsigned long cycleMs) {
+  cycleMs = max(300UL, cycleMs);
+
+  // Une tete lumineuse et une queue de 6 LED font le tour du logo.
+  uint16_t head =
+    (uint16_t)(((elapsed % cycleMs) * LED_COUNT) / cycleMs);
+
+  pixels.clear();
+
+  const uint8_t tailLength = 6;
+
+  for (uint8_t tail = 0; tail < tailLength; tail++) {
+    uint16_t index =
+      (head + LED_COUNT - tail) % LED_COUNT;
+
+    uint8_t tailIntensity =
+      (uint8_t)(((uint16_t)intensity * (tailLength - tail)) / tailLength);
+
+    setPixelLevel(index, r, g, b, tailIntensity);
+  }
+
+  pixels.show();
+  updateLedStatusReference(r,g,b,intensity);
+}
+
+void renderLogoDraw(uint8_t r,
+                    uint8_t g,
+                    uint8_t b,
+                    uint8_t intensity,
+                    unsigned long elapsed,
+                    unsigned long cycleMs) {
+  // Dessine progressivement le contour complet, garde un court plateau,
+  // puis recommence. Le ruban physique suit le contour du logo.
+  cycleMs = max(700UL, cycleMs);
+
+  unsigned long pos = elapsed % cycleMs;
+  float p = (float)pos / (float)cycleMs;
+
+  pixels.clear();
+
+  uint16_t litCount = 0;
+
+  if (p < 0.78f) {
+    litCount = 1U + (uint16_t)((p / 0.78f) * (LED_COUNT - 1U));
+  } else {
+    litCount = LED_COUNT;
+  }
+
+  if (litCount > LED_COUNT) litCount = LED_COUNT;
+
+  for (uint16_t i = 0; i < litCount; i++) {
+    setPixelLevel(i, r, g, b, intensity);
+  }
+
+  // Le dernier point est plus lumineux pour visualiser la progression.
+  if (litCount > 0 && litCount < LED_COUNT) {
+    setPixelLevel(litCount - 1, r, g, b, min(100, (int)intensity + 25));
+  }
+
+  pixels.show();
+  updateLedStatusReference(r,g,b,intensity);
 }
 
 
@@ -2409,6 +2533,38 @@ void updateAlert() {
         renderMacroIdle(alertMacro);
         alertVisible = false;
       }
+      break;
+    }
+
+    case ALERT_LOGO_CHASE: {
+      if (now - alertAnimLastFrameAt < 25UL) return;
+      alertAnimLastFrameAt = now;
+
+      unsigned long cycle =
+        max(500UL, (unsigned long)m.blinkMs * 2UL);
+
+      renderLogoChase(
+        m.r, m.g, m.b, m.intensity,
+        elapsed, cycle
+      );
+
+      alertVisible = true;
+      break;
+    }
+
+    case ALERT_LOGO_DRAW: {
+      if (now - alertAnimLastFrameAt < 25UL) return;
+      alertAnimLastFrameAt = now;
+
+      unsigned long cycle =
+        max(700UL, (unsigned long)m.blinkMs * 3UL);
+
+      renderLogoDraw(
+        m.r, m.g, m.b, m.intensity,
+        elapsed, cycle
+      );
+
+      alertVisible = true;
       break;
     }
 
@@ -3081,7 +3237,9 @@ function updateAnimationHelp(){
     'Boucle : 100 % instantane → fade jusqu a 0 % → retour instantane a 100 %.',
     'Un seul passage sur toute la duree : vert → jaune → rouge.',
     'DIRECT / HORS DIRECT accelere progressivement sur toute la duree.',
-    'Deux flashs courts suivis d une pause, repetes pendant la duree.'
+    'Deux flashs courts suivis d une pause, repetes pendant la duree.',
+    'Un point lumineux avec une queue fait le tour des 30 LED du logo.',
+    'Le contour du logo se dessine LED par LED puis recommence.'
   ];
 
   e.textContent=txt[v]||txt[0];
@@ -3465,7 +3623,15 @@ void sendMacroSettingsPage(uint8_t i) {
 
   c += "<option value='4'";
   if (m.alertAnimation == ALERT_DOUBLE_FLASH) c += " selected";
-  c += ">Double flash / heartbeat</option></select>";
+  c += ">Double flash / heartbeat</option>";
+
+  c += "<option value='5'";
+  if (m.alertAnimation == ALERT_LOGO_CHASE) c += " selected";
+  c += ">Logo : point lumineux tournant</option>";
+
+  c += "<option value='6'";
+  if (m.alertAnimation == ALERT_LOGO_DRAW) c += " selected";
+  c += ">Logo : dessin progressif du contour</option></select>";
 
   c += "<div id='animationHelp' class='small' style='margin-top:7px'></div>";
   c += "<div class='grid2'><div><label>Duree alerte</label>";
@@ -4112,7 +4278,7 @@ bool readMacroRequest(uint8_t& idx,
   idleIntensity = constrain(server.arg("idleIntensity").toInt(), 0, 100);
   idleOff = server.arg("idleOff") == "1";
 
-  alertAnimation = constrain(server.arg("alertAnimation").toInt(), (int)ALERT_CLASSIC, (int)ALERT_DOUBLE_FLASH);
+  alertAnimation = constrain(server.arg("alertAnimation").toInt(), (int)ALERT_CLASSIC, (int)ALERT_LOGO_DRAW);
   alertDuration = constrain(server.arg("alertDuration").toInt(), 1, 60);
   blinkMs = constrain(server.arg("blinkMs").toInt(), 100, 2000);
 
@@ -5130,11 +5296,13 @@ void setup() {
   Serial.println(" Firmware " + String(FIRMWARE_VERSION));
   Serial.println("===========================================");
 
-  pinMode(PIN_RED,OUTPUT);
-  pinMode(PIN_GREEN,OUTPUT);
-  pinMode(PIN_BLUE,OUTPUT);
-  analogWriteRange(PWM_MAX);
-  ledsOff();
+  pixels.begin();
+  pixels.setBrightness(255);
+  pixels.clear();
+  pixels.show();
+
+  Serial.println("[LED] WS2812E adressable");
+  Serial.println("[LED] D5 / GPIO14 | 30 LED | 500 mm | GRB 800 kHz");
 
   if (!LittleFS.begin()) Serial.println("[FS] ECHEC LittleFS");
   else Serial.println("[FS] LittleFS OK");
