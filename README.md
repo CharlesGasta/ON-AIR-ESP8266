@@ -25,6 +25,18 @@ Contrôleur **ON AIR RGB autonome** basé sur ESP8266 / NodeMCU 1.0 (ESP-12E), a
 - diagnostic système
 - mise à jour OTA depuis l'interface Web
 
+## Ruban adressable WS2812E
+
+La V3.0.0 est prévue pour le ruban WS2812E 5 V / 60 LED/m du logo Damien.
+
+Contour prévu : **200 + 50 + 200 + 50 mm = 500 mm**, soit **30 LED**.
+
+Le pilotage utilise uniquement **D5 / GPIO14** via un buffer logique **74AHCT125**. Les trois MOSFETs RGB analogiques de l'ancienne version ne sont plus utilisés.
+
+Deux animations spatiales ont été ajoutées aux alertes : **point lumineux tournant** et **dessin progressif du contour**.
+
+Voir `HARDWARE_ADDRESSABLE.md` pour le câblage complet.
+
 ## Matériel
 
 Firmware compilé pour :
@@ -95,7 +107,7 @@ Envoyer le fichier :
 
 ## Version actuelle
 
-**V2.13.0 — IOS CAPTIVE PORTAL FIX**
+**V3.0.0 — ADDRESSABLE LOGO 30LED**
 
 ## Auteur
 
