@@ -33,7 +33,7 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.0.1 ADDRESSABLE LOGO 36LED"
+#define FIRMWARE_VERSION "3.0.2 ADDRESSABLE LOGO 36LED USB LIMIT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -2001,11 +2001,23 @@ uint8_t scaleByPercent(uint8_t value, uint8_t percent) {
   return (uint8_t)(((uint16_t)value * constrain((int)percent, 0, 100)) / 100U);
 }
 
+// Limitation provisoire de courant pour 36 LED alimentees via VV/USB.
+// 25% max = environ 0,64 A total nominal / 0,86 A pessimiste
+// avec une reserve ESP8266 de 300 mA et un affichage blanc.
+// ATTENTION: ceci n'est PAS une protection contre les courts-circuits
+// ni une validation du courant admissible par la carte.
+// Toute sortie LED passe par pixelColorLevel(), y compris les alertes
+// et les effets spatiaux (qui peuvent ignorer le curseur de macro).
+const uint8_t LED_GLOBAL_MAX_PERCENT = 25;
+
 uint32_t pixelColorLevel(uint8_t r, uint8_t g, uint8_t b, uint8_t intensity) {
+  const uint8_t cappedIntensity =
+    min((uint8_t)constrain((int)intensity, 0, 100), LED_GLOBAL_MAX_PERCENT);
+
   return pixels.Color(
-    scaleByPercent(r, intensity),
-    scaleByPercent(g, intensity),
-    scaleByPercent(b, intensity)
+    scaleByPercent(r, cappedIntensity),
+    scaleByPercent(g, cappedIntensity),
+    scaleByPercent(b, cappedIntensity)
   );
 }
 
@@ -5292,6 +5304,7 @@ void setup() {
 
   Serial.println("[LED] WS2812E adressable");
   Serial.println("[LED] D5 / GPIO14 | 36 LED | GRB 800 kHz");
+  Serial.println("[LED SAFETY] Limite globale sortie = " + String(LED_GLOBAL_MAX_PERCENT) + "%");
 
   if (!LittleFS.begin()) Serial.println("[FS] ECHEC LittleFS");
   else Serial.println("[FS] LittleFS OK");
