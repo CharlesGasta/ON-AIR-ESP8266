@@ -1,5 +1,14 @@
 # Changelog
 
+## V3.0.2
+
+- limite logicielle globale fixe de luminosite **25 %** au point central `pixelColorLevel()`
+- concerne les 36 WS2812E, le DIRECT, HORS DIRECT, les alertes, les apercus et les effets de logo
+- corrige le risque du mode flash/fade : celui-ci peut produire 100 % meme si la macro est reglee plus bas
+- estimations en blanc plein : environ **0,64 A nominal / 0,86 A pessimiste** carte comprise (reserve ESP de 300 mA)
+- 25 % est une valeur provisoire sous reserve d'une source USB et d'un chemin VV adaptes ; aucune homologation de la carte
+
+
 ## V3.0.1
 
 - nombre reel de LED du logo confirme : 36 LED WS2812E (au lieu des 30 supposees)
