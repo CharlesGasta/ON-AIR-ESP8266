@@ -29,7 +29,7 @@ Contrôleur **ON AIR RGB autonome** basé sur ESP8266 / NodeMCU 1.0 (ESP-12E), a
 
 La V3.0.3 applique un **plafond global fixe de 50 %** a l'intensite de sortie des 36 pixels WS2812E, y compris les alertes, les couleurs de demarrage, les tests et les animations spatiales.
 
-Les curseurs peuvent encore afficher des valeurs jusqu'a 100 %, mais toute valeur au-dela de 50 % a le meme rendu que 25 % jusqu'a une nouvelle version du firmware. Les couleurs restent conservees.
+Les curseurs peuvent encore afficher des valeurs jusqu'a 100 %, mais toute valeur au-dela de 50 % a le meme rendu que 50 % jusqu'a une nouvelle version du firmware. Les couleurs restent conservees.
 
 Ce plafond vise un courant estime entre **0,94 A et 1,40 A** (ESP compris, hypothese carte 300 mA) pour 36 LED en blanc, selon les hypotheses electriques nominale/pessimiste. Ce n'est pas une validation de la capacite de la broche VV ni une protection contre les courts-circuits. Verifier le modele de carte et la source USB reellement utilises.
 
