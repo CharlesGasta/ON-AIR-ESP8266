@@ -33,7 +33,7 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.0.2 ADDRESSABLE LOGO 36LED USB LIMIT"
+#define FIRMWARE_VERSION "3.0.3 ADDRESSABLE LOGO 36LED USB 50PCT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -2002,13 +2002,13 @@ uint8_t scaleByPercent(uint8_t value, uint8_t percent) {
 }
 
 // Limitation provisoire de courant pour 36 LED alimentees via VV/USB.
-// 25% max = environ 0,64 A total nominal / 0,86 A pessimiste
-// avec une reserve ESP8266 de 300 mA et un affichage blanc.
+// 50% max : essai apres mesure reelle du ruban a 25% (318 mA).
+// Estimation a 50% blanc ~ 0,64 A pour le ruban, sans ESP.\n// La capacite de la broche VV de cette carte reste a verifier.
 // ATTENTION: ceci n'est PAS une protection contre les courts-circuits
 // ni une validation du courant admissible par la carte.
 // Toute sortie LED passe par pixelColorLevel(), y compris les alertes
 // et les effets spatiaux (qui peuvent ignorer le curseur de macro).
-const uint8_t LED_GLOBAL_MAX_PERCENT = 25;
+const uint8_t LED_GLOBAL_MAX_PERCENT = 50;
 
 uint32_t pixelColorLevel(uint8_t r, uint8_t g, uint8_t b, uint8_t intensity) {
   const uint8_t cappedIntensity =
