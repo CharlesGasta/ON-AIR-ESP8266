@@ -27,9 +27,9 @@ Contrôleur **ON AIR RGB autonome** basé sur ESP8266 / NodeMCU 1.0 (ESP-12E), a
 
 ## Ruban adressable WS2812E
 
-La V3.0.0 est prévue pour le ruban WS2812E 5 V / 60 LED/m du logo Damien.
+La V3.0.1 pilote les 36 LED WS2812E 5 V confirmees sur le logo Damien.
 
-Contour prévu : **200 + 50 + 200 + 50 mm = 500 mm**, soit **30 LED**.
+Contour vise : **200 + 50 + 200 + 50 mm = 500 mm**. La repartition exacte des **36 LED** entre les 4 cotes reste a verifier : ne pas supposer 12/3/12/3.
 
 Le pilotage utilise uniquement **D5 / GPIO14** via un buffer logique **74AHCT125**. Les trois MOSFETs RGB analogiques de l'ancienne version ne sont plus utilisés.
 
@@ -107,7 +107,7 @@ Envoyer le fichier :
 
 ## Version actuelle
 
-**V3.0.0 — ADDRESSABLE LOGO 30LED**
+**V3.0.1 — ADDRESSABLE LOGO 36LED**
 
 ## Auteur
 
