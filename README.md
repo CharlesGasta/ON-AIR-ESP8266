@@ -25,9 +25,17 @@ Contrôleur **ON AIR RGB autonome** basé sur ESP8266 / NodeMCU 1.0 (ESP-12E), a
 - diagnostic système
 - mise à jour OTA depuis l'interface Web
 
+## Limite lumineuse 25 %
+
+La V3.0.2 applique un **plafond global fixe de 25 %** a l'intensite de sortie des 36 pixels WS2812E, y compris les alertes, les couleurs de demarrage, les tests et les animations spatiales.
+
+Les curseurs peuvent encore afficher des valeurs jusqu'a 100 %, mais toute valeur au-dela de 25 % a le meme rendu que 25 % jusqu'a une nouvelle version du firmware. Les couleurs restent conservees.
+
+Ce plafond vise un courant estime entre **0,64 A et 0,86 A** (ESP compris, hypothese carte 300 mA) pour 36 LED en blanc, selon les hypotheses electriques nominale/pessimiste. Ce n'est pas une validation de la capacite de la broche VV ni une protection contre les courts-circuits. Verifier le modele de carte et la source USB reellement utilises.
+
 ## Ruban adressable WS2812E
 
-La V3.0.1 pilote les 36 LED WS2812E 5 V confirmees sur le logo Damien.
+La V3.0.2 pilote les 36 LED WS2812E 5 V confirmees sur le logo Damien.
 
 Contour vise : **200 + 50 + 200 + 50 mm = 500 mm**. La repartition exacte des **36 LED** entre les 4 cotes reste a verifier : ne pas supposer 12/3/12/3.
 
@@ -107,7 +115,7 @@ Envoyer le fichier :
 
 ## Version actuelle
 
-**V3.0.1 — ADDRESSABLE LOGO 36LED**
+**V3.0.2 — ADDRESSABLE LOGO 36LED**
 
 ## Auteur
 
