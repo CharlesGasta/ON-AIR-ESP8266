@@ -31,13 +31,13 @@ Condensateur 1000 uF / 10 ou 16 V, proche debut ruban :
   borne - vers GND
 ```
 
-## Limite de luminosite V3.0.2
+## Limite de luminosite V3.0.3
 
-Le firmware limite desormais chaque sortie LED au maximum a **25 %**, quelle que soit la luminosite de la macro (jusqu'a 100 % sur l'interface) et y compris les alertes. Cette limitation sert a reduire les consommations mais ne mesure pas le courant.
+Le firmware limite desormais chaque sortie LED au maximum a **50 %**, quelle que soit la luminosite de la macro (jusqu'a 100 % sur l'interface) et y compris les alertes. Cette limitation sert a reduire les consommations mais ne mesure pas le courant.
 
 Tableau pour 36 pixels blancs :
-- 25 % selon le fabricant WS2812E 12 mA/canal : env. 0,64 A pour ESP + ruban
-- 25 % avec hypothese haute 20 mA/canal : env. 0,86 A pour ESP + ruban
+- 50 % selon le fabricant WS2812E 12 mA/canal : env. 0,97 A pour ESP + ruban
+- 50 % avec hypothese haute 20 mA/canal : env. 1,40 A pour ESP + ruban
 - estimation de reserve ESP : 300 mA, sans garantie sur les pics reels
 - la source USB et la carte VV restent a qualifier physiquement
 
