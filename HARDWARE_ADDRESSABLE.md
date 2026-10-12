@@ -1,79 +1,59 @@
-# ON AIR Damien — câblage ruban adressable
+# ON AIR Damien — hardware ruban adressable V3.0.1
 
-## Ruban retenu
+## Ruban et nombre de pixels confirmes
 
-- WS2812E 5 V, 60 LED/m, IP30
-- longueur totale du contour : 500 mm
-- 200 mm + 50 mm + 200 mm + 50 mm
-- 30 LED au total
+- 36 LED WS2812E adressables 5 V, LED 0 a 35.
+- DATA sur D5 / GPIO14 de l'ESP8266 NodeMCU.
+- Couleurs dans le firmware : NEO_GRB + NEO_KHZ800.
+- Enchainement physique : DOUT d'une LED/section vers DIN de la suivante.
+- Le sens de parcours du ruban definit le sens des animations.
+- Ancien perimetre cible : 200 + 50 + 200 + 50 mm = 500 mm.
+- ATTENTION : 36 LED a 60 LED/m representent 600 mm de ruban, et non 500 mm. Verifier la densite reelle et le compte des pixels par cote.
+- Ne pas supposer de repartition fixe par cote pour l'instant. Les animations V3.0.1 fonctionnent sur les 36 LED en sequence.
 
-Ordre logique prévu dans le firmware :
-
-- LED 0 à 11 : côté haut, gauche vers droite
-- LED 12 à 14 : côté droit, haut vers bas
-- LED 15 à 26 : côté bas, droite vers gauche
-- LED 27 à 29 : côté gauche, bas vers haut
-
-Le sens des flèches DATA du ruban doit suivre cet ordre.
-
-## Schéma de principe
+## Branchement simple demande : une seule alimentation USB-C, via VV
 
 ```text
-ALIMENTATION 5 V / 3 A
-        +5V -----------------------------+------------------> +5V RUBAN
-                                         |
-                                         +--> VIN/5V ESP8266
-        GND -----------------------------+------------------> GND RUBAN
-                                         |
-                                         +--> GND ESP8266
-                                         |
-                                         +--> GND 74AHCT125
+         Cable USB-C 5 V vers NodeMCU
+                      |
+                  ESP8266
+                 /   |    \
+               VV   GND  D5/GPIO14
+                |    |      |
+                |    |     330 ohms
+                |    |      |
+                |    |      +--------------> DIN premiere LED
+                |    +---------------------> GND ruban
+                +--------------------------> +5 V ruban
 
-ESP8266 D5 / GPIO14
-        |
-        +--> 74AHCT125 entrée 1A (pin 2)
-
-74AHCT125
-  pin 14 VCC --> +5V
-  pin 7  GND --> GND
-  pin 1  /OE --> GND
-  pin 2  1A  <-- D5 / GPIO14
-  pin 3  1Y  --> 330 ohms --> DIN du premier WS2812E
-
-100 nF entre pins 14 et 7 du 74AHCT125.
-1000 uF / 10 V entre +5V et GND près du premier WS2812E.
+Condensateur 1000 uF / 10 ou 16 V, proche debut ruban :
+  borne + vers +5 V
+  borne - vers GND
 ```
 
-## Alimentation
+## Limites electriques importantes
 
-Le calcul de dimensionnement se fait au pire cas :
+- Broche 3V3 : NE JAMAIS ALIMENTER LE RUBAN DEPUIS 3V3.
+- Le signal D5 / GPIO14 est a 3,3 V, tandis que les LED sont alimentees a 5 V. Cela peut fonctionner avec un cablage DATA tres court, mais n'est pas garanti a toutes les tensions/temperatures. Ajouter un 74AHCT125 si des erreurs apparaissent.
+- GND commun obligatoire.
+- 36 LED x 60 mA = jusqu'a 2,16 A sur le ruban pour un blanc pleine puissance, PLUS la consommation/pics de l'ESP8266.
+- VV correspond souvent au 5 V USB sur certaines cartes NodeMCU, mais sa capacite en courant depend du modele, des pistes, connecteurs et composants de protection. Sans verification de la carte, NE PAS CONSIDERER une alimentation de 36 LED a pleine puissance par VV comme validee.
+- Reduire les intensites des macros ne constitue pas une limitation electrique absolue.
+- L'utilisateur souhaite un montage sans fusible externe ; surveiller attentivement les courts-circuits de soudure et l'echauffement. Une protection amont adequate reste recommandee.
 
-30 LED × 60 mA = 1,8 A pour le ruban à blanc 100 %.
+## Composants
 
-Avec l'ESP8266 et une marge de sécurité, utiliser une alimentation régulée 5 V / 3 A.
+- ESP8266 NodeMCU avec entree USB-C.
+- 36 LED WS2812E 5 V.
+- Resistance serie DATA 330 ohms, 1/4 W.
+- Condensateur 1000 uF / 10 V ou 16 V entre +5 V et GND pres du ruban.
+- Fil +5 V et GND de section convenable pour plus de 2 A max.
+- Fil DATA court.
+- Fils de pontage 5 V, GND et DOUT->DIN aux angles du logo.
+- Gaine thermoretractable et isolant aux raccords.
 
-Pour 500 mm seulement, une injection d'alimentation au début du ruban suffit normalement. Le firmware limite toujours les intensités par les réglages des macros.
+## Sorties inutilisees
 
-## Câble recommandé
+Les trois sorties PWM RGB analogiques et les 3 MOSFETs IRLZ44N ne sont plus utilises.
 
-Pour un câble court entre le boîtier et le ruban :
-
-- 3 conducteurs
-- +5 V : 0,5 mm² minimum
-- GND : 0,5 mm² minimum
-- DATA : 0,14 à 0,5 mm²
-- connecteur verrouillable recommandé : Molex Micro-Fit 3.0, 3 contacts
-
-Repérage conseillé :
-
-1. +5 V
-2. DATA
-3. GND
-
-Ne jamais brancher DATA sans GND commun.
-
-## Ancien montage RGB analogique
-
-La V3.0.0 n'utilise plus les trois MOSFET IRLZ44N ni les sorties D2/D1/D5 séparées.
-
-Le seul signal LED est maintenant D5 / GPIO14 vers le 74AHCT125, puis vers DIN du ruban WS2812E.
+Le firmware pilote le ruban exclusivement avec la ligne DATA D5/GPIO14.
