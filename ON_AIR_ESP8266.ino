@@ -33,29 +33,18 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.0.0 ADDRESSABLE LOGO 30LED"
+#define FIRMWARE_VERSION "3.0.1 ADDRESSABLE LOGO 36LED"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
-// 500 mm au total : 200 + 50 + 200 + 50 mm.
-// Ruban 60 LED/m -> 30 LED exactement.
-// Ordre logique autour du contour :
-//   0..11  = haut   (gauche -> droite)
-//   12..14 = droite (haut -> bas)
-//   15..26 = bas    (droite -> gauche)
-//   27..29 = gauche (bas -> haut)
+// Nombre reel confirme sur le montage : 36 LED au total.
+// LED 0..35 : ordre physique de DIN vers DOUT autour du contour.
+// Les repartitions exactes aux 4 angles restent a mesurer.
+// Les effets de poursuite et dessin fonctionnent sans
+// supposer le nombre de LED par cote.
 // ============================================================
 const uint8_t LED_DATA_PIN = D5;       // GPIO14
-const uint16_t LED_COUNT = 30;
-const uint8_t LED_TOP_COUNT = 12;
-const uint8_t LED_RIGHT_COUNT = 3;
-const uint8_t LED_BOTTOM_COUNT = 12;
-const uint8_t LED_LEFT_COUNT = 3;
-
-static_assert(
-  LED_TOP_COUNT + LED_RIGHT_COUNT + LED_BOTTOM_COUNT + LED_LEFT_COUNT == LED_COUNT,
-  "La geometrie du logo doit totaliser 30 LED"
-);
+const uint16_t LED_COUNT = 36;
 
 Adafruit_NeoPixel pixels(
   LED_COUNT,
@@ -5302,7 +5291,7 @@ void setup() {
   pixels.show();
 
   Serial.println("[LED] WS2812E adressable");
-  Serial.println("[LED] D5 / GPIO14 | 30 LED | 500 mm | GRB 800 kHz");
+  Serial.println("[LED] D5 / GPIO14 | 36 LED | GRB 800 kHz");
 
   if (!LittleFS.begin()) Serial.println("[FS] ECHEC LittleFS");
   else Serial.println("[FS] LittleFS OK");
