@@ -1,5 +1,15 @@
 # Changelog
 
+## V3.0.1
+
+- nombre reel de LED du logo confirme : 36 LED WS2812E (au lieu des 30 supposees)
+- driver NeoPixel configure pour 36 pixels (LED 0 a 35)
+- animations conservees : chenillard et dessin progressif sur toute la chaine
+- retrait des repartitions fixes 12/3/12/3, non confirmees sur le montage
+- courant maximal theorique du ruban : 36 x 60 mA = 2,16 A au blanc 100 % ; verifier le passage de courant si alimentation par VV
+- connexion DATA : D5 / GPIO14 via resistance 330 ohms
+
+
 ## V3.0.0
 
 - passage du RGB analogique à un ruban adressable WS2812E 5 V
