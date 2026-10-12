@@ -1,5 +1,14 @@
 # Changelog
 
+## V3.0.3
+
+- nouveau plafond logiciel global de luminosite **50 %** pour les 36 WS2812E
+- suite a la mesure utilisateur **318 mA sur le ruban a 25 % blanc**
+- estimation de mesure a 50 % blanc : environ 0,64 A pour le ruban seul (a verifier)
+- conserve portail captif, Wi-Fi, OTA, toutes les macros et les animations
+- prudence : le courant admissible de VV reste a qualifier; couper l'alimentation si baisse de tension ou surchauffe
+
+
 ## V3.0.2
 
 - limite logicielle globale fixe de luminosite **25 %** au point central `pixelColorLevel()`
