@@ -4579,7 +4579,6 @@ void handleUploadLogoData() {
     if (!validImageExtension(upload.filename)) return;
 
     uploadTargetPath = logoPathFor(uploadTargetMacro, upload.filename);
-    char customPath[24];snprintf(customPath,sizeof(customPath),"/custom%u.bin",i);LittleFS.remove(customPath);
     String png = "/m" + String(uploadTargetMacro+1) + ".png";
     String jpg = "/m" + String(uploadTargetMacro+1) + ".jpg";
     if (LittleFS.exists(png)) LittleFS.remove(png);
@@ -4681,6 +4680,7 @@ void handleFactoryReset() {
   setDefaults();
   saveConfig();
   for (uint8_t i=0;i<MACRO_COUNT;i++) {
+    char customPath[24];snprintf(customPath,sizeof(customPath),"/custom%u.bin",i);LittleFS.remove(customPath);
     String png = "/m" + String(i+1) + ".png";
     String jpg = "/m" + String(i+1) + ".jpg";
     if (LittleFS.exists(png)) LittleFS.remove(png);
