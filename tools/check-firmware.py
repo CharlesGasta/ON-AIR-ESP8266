@@ -25,7 +25,7 @@ previous=subprocess.check_output(['git','show','9fd36bbb627346f8e6a70c49339bc49a
 current=(Path(__file__).resolve().parents[1]/'ON_AIR_ESP8266.ino').read_text(encoding='utf-8')
 for text in (previous,current):
     assert 'if(mode==6)motionRainbow(x*.8f-p,frame[i],peak);' in text
-assert previous.split('bool renderBootFrame(')[1].split('// END PORTABLE MOTION ENGINE')[0] == current.split('bool renderBootFrame(')[1].split('// END PORTABLE MOTION ENGINE')[0]
+assert previous.split('bool renderBootFrame(')[1].split('// END PORTABLE MOTION ENGINE')[0].strip() == current.split('bool renderBootFrame(')[1].split('bool isLibraryId')[0].strip()
 print('PASS: approved boot cinematic and horizontal rainbow unchanged')
 
 setup=current.split('void setup() {')[1].split('void loop() {')[0]

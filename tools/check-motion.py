@@ -41,6 +41,7 @@ using std::size_t;
 '''
 stubs=r'''
 static uint8_t customData[1356];static int customOwner=-1;static bool customValid=false,customPreview=false,customPreviewAlert=false;
+bool libraryPreviewActive=false,libraryPreviewPlaying=false;uint8_t libraryPreviewCue=0;unsigned long libraryPreviewStarted=0,libraryPreviewLastFrame=0,settingsPreviewUntil=0;char libraryPreviewToken[41]={};
 bool otaVisualActive=false;unsigned long otaVisualLastFrame=0,otaErrorUntil=0;
 uint32_t clockMs=0;uint32_t millis(){return clockMs;}
 int activeMacro=-1,alertMacro=-1;
@@ -59,6 +60,7 @@ void setPixelLevel(uint16_t i,uint8_t r,uint8_t g,uint8_t b,uint8_t intensity){a
 void updateLedStatusReference(uint8_t,uint8_t,uint8_t,uint8_t){}
 void setRGBLevel(uint8_t r,uint8_t g,uint8_t b,uint8_t intensity){for(int i=0;i<36;i++)setPixelLevel(i,r,g,b,intensity);shown++;}
 void ledsOff(){memset(displayed,0,sizeof(displayed));shown++;}
+void renderCurrentOutput(){ledsOff();}
 void applyMacroIdle(uint8_t);
 bool failWrite=false,failRename=false;
 std::map<std::string,std::vector<uint8_t>> files;
@@ -67,10 +69,11 @@ struct File {
  operator bool()const{return valid;}
  size_t size(){return valid?files[name].size():0;}
  size_t read(uint8_t* dst,size_t n){if(!valid)return 0;n=std::min(n,files[name].size()-at);memcpy(dst,files[name].data()+at,n);at+=n;return n;}
- size_t write(const uint8_t* data,size_t n){if(!valid||failWrite)return 0;files[name].assign(data,data+n);return n;}
+ size_t write(const uint8_t* data,size_t n){if(!valid||failWrite)return 0;auto& bytes=files[name];if(bytes.size()<at+n)bytes.resize(at+n);memcpy(bytes.data()+at,data,n);at+=n;return n;}
  void flush(){}void close(){}
 };
 struct {
+ bool exists(const char* name){return files.count(name);}
  File open(const char* name,const char* mode){File f;f.name=name;if(mode[0]=='w'){files[name].clear();f.valid=true;}else f.valid=files.count(name);return f;}
  bool rename(const char* from,const char* to){if(failRename||!files.count(from))return false;files[to]=files[from];files.erase(from);return true;}
 } LittleFS;
@@ -89,7 +92,7 @@ struct {bool error=false;bool hasError(){return error;}} Update;
 void delay(unsigned long ms){clockMs+=ms;}
 int configWrites=0;void saveConfig(){configWrites++;}
 '''
-functions='\n'.join(function(n) for n in ['configChecksum','resetMotionSettings','validMotionSettings','saveMotionSettings','loadMotionSettings','showMotionFrame','renderSpatialMotion','cancelStartupIndicator','setStartupIndicatorState','enterStartupState','updateStartupIndicatorNetworkState','finishStartupSequence','updateStartupIndicator','customWord','validCustom','loadCustom','renderCustomOutput','renderMacroDirect','updateDirectMotion','startupAnimation','blackout','handleConfigExport','handleConfigImportData','otaVisualStart','otaVisualProgress','otaVisualError','otaVisualEnd','updateOTAVisual'])
+functions='\n'.join(function(n) for n in ['configChecksum','resetMotionSettings','validMotionSettings','saveMotionSettings','loadMotionSettings','showMotionFrame','renderSpatialMotion','cancelStartupIndicator','setStartupIndicatorState','enterStartupState','updateStartupIndicatorNetworkState','finishStartupSequence','updateStartupIndicator','customWord','validCustom','loadCustom','renderCustomOutput','renderLibraryOutput','renderMacroDirect','updateDirectMotion','startupAnimation','blackout','handleConfigExport','handleConfigImportData','validLibraryName','libraryReadName','libraryWrite','libraryNamesEqual','migrateAnimationLibrary','stopLibraryPreview','updateLibraryPreview','otaVisualStart','otaVisualProgress','otaVisualError','otaVisualEnd','updateOTAVisual'])
 tests=r'''
 void applyMacroIdle(uint8_t i){cancelStartupIndicator();activeMacro=i;outputEnabled=false;ledsOff();}
 void tick(uint32_t ms){clockMs=ms;updateStartupIndicatorNetworkState();updateStartupIndicator();}
@@ -148,7 +151,22 @@ int main(){
  auto alertFile=directFile;alertFile[12]=50;uint32_t alertCrc=configChecksum(alertFile.data(),1352);memcpy(alertFile.data()+1352,&alertCrc,4);files["/custom4.bin"]=alertFile;
  renderCustomOutput(0,0,true);assert(displayed[0][0]==50&&files["/custom0.bin"]==directFile);
  renderCustomOutput(0,0,false);assert(displayed[0][0]==200);
- customData[20]^=1;assert(!validCustom(customData));customOwner=-1;
+
+ assert(validLibraryName("Studio")&&!validLibraryName("")&&!validLibraryName(" Studio"));
+ assert(libraryNamesEqual("STUDIO","studio")&&libraryNamesEqual("ÉTÉ","été")&&!libraryNamesEqual("Studio","Studio 2"));
+ assert(libraryWrite(32,"Aurore",files["/custom0.bin"].data()));char savedName[64];assert(libraryReadName(32,savedName)&&std::string(savedName)=="Aurore");
+ auto namedFile=files["/anim32.bin"];failRename=true;assert(!libraryWrite(32,"Replacement",files["/custom4.bin"].data()));assert(files["/anim32.bin"]==namedFile);failRename=false;
+ customOwner=-1;config.macro[0].intensity=50;renderLibraryOutput(0,32,0);assert(displayed[0][0]==100);config.macro[0].intensity=100;
+ motionSettings.mode[0]=32;motionSettings.checksum=configChecksum(reinterpret_cast<uint8_t*>(&motionSettings),sizeof(motionSettings)-4);assert(validMotionSettings(motionSettings));
+
+ strcpy(config.macro[0].name,"ONE FM");motionSettings.mode[0]=10;config.macro[0].alertAnimation=ALERT_CUSTOM;customOwner=-1;migrateAnimationLibrary();
+ assert(motionSettings.mode[0]==32&&config.macro[0].alertAnimation==36&&files.count("/library.migrated"));
+ assert(libraryReadName(36,savedName));auto originalName=files["/anim32.bin"];migrateAnimationLibrary();assert(files["/anim32.bin"]==originalName);
+ auto beforePreviewFiles=files;assert(loadCustom(0));customOwner=-2;libraryPreviewActive=true;settingsPreviewActive=true;libraryPreviewCue=0;libraryPreviewPlaying=false;settingsPreviewUntil=clockMs+3000;libraryPreviewLastFrame=clockMs-33;
+ updateLibraryPreview();assert(displayed[0][0]==200&&files==beforePreviewFiles);
+ clockMs+=3001;updateLibraryPreview();assert(!libraryPreviewActive&&!settingsPreviewActive&&displayed[0][0]==0);
+ libraryPreviewActive=true;settingsPreviewActive=true;customOwner=-2;blackout();int afterOff=shown;updateLibraryPreview();assert(!libraryPreviewActive&&shown==afterOff);
+ customOwner=-1;assert(loadCustom(0));customData[20]^=1;assert(!validCustom(customData));customOwner=-1;
  beginBoot(false);tick(4500);assert(startupIndicatorState==STARTUP_IND_AP);tick(5400);assert(startupIndicatorState==STARTUP_IND_FALLBACK);tick(7000);assert(startupSequenceComplete);
  beginBoot(true,3);tick(4500);tick(5400);tick(5425);assert(startupIndicatorState==STARTUP_IND_READY);tick(6475);assert(startupSequenceComplete);
  beginBoot(true);tick(4500);tick(5400);tick(15000);assert(startupIndicatorState==STARTUP_IND_ERROR);tick(16500);assert(startupIndicatorState==STARTUP_IND_FALLBACK);tick(18100);assert(startupSequenceComplete);

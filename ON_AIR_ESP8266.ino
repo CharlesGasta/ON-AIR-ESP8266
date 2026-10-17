@@ -34,7 +34,7 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.3.2 CUES 36LED 100PCT"
+#define FIRMWARE_VERSION "3.4.0 LIBRARY 36LED 100PCT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -1895,7 +1895,7 @@ void resetMotionSettings() {
 bool validMotionSettings(const MotionSettings& data) {
   if(data.magic!=MOTION_MAGIC)return false;
   if(configChecksum(reinterpret_cast<const uint8_t*>(&data),sizeof(data)-sizeof(data.checksum))!=data.checksum)return false;
-  for(uint8_t i=0;i<MACRO_COUNT;i++)if(data.mode[i]>10||data.cycleMs[i]<1000||data.cycleMs[i]>12000)return false;
+  for(uint8_t i=0;i<MACRO_COUNT;i++)if((data.mode[i]>10&&!isLibraryId(data.mode[i]))||data.cycleMs[i]<1000||data.cycleMs[i]>12000)return false;
   return true;
 }
 bool saveMotionSettings() {
@@ -1919,7 +1919,7 @@ void loadMotionSettings() {
   if(ok&&validMotionSettings(loaded)){motionSettings=loaded;motionSavedChecksum=loaded.checksum;}
 }
 void readMotionRequest(uint8_t i) {
-  if(server.hasArg("directMotion"))motionSettings.mode[i]=constrain(server.arg("directMotion").toInt(),0,10);
+  if(server.hasArg("directMotion")){int mode=server.arg("directMotion").toInt();motionSettings.mode[i]=(mode>=0&&mode<=10)||isLibraryId(mode)?mode:0;}
   if(server.hasArg("motionCycle"))motionSettings.cycleMs[i]=constrain(server.arg("motionCycle").toInt(),1000,12000);
 }
 
@@ -2060,7 +2060,7 @@ void loadConfig() {
 
     config.macro[i].intensity = constrain(config.macro[i].intensity, 0, 100);
     config.macro[i].idleIntensity = constrain(config.macro[i].idleIntensity, 0, 100);
-    config.macro[i].alertAnimation = constrain(config.macro[i].alertAnimation, (uint8_t)ALERT_CLASSIC, (uint8_t)ALERT_CUSTOM);
+    if(config.macro[i].alertAnimation>ALERT_CUSTOM&&!isLibraryId(config.macro[i].alertAnimation))config.macro[i].alertAnimation=ALERT_CLASSIC;
     config.macro[i].alertDuration = constrain(config.macro[i].alertDuration, 1, 60);
     config.macro[i].blinkMs = constrain(config.macro[i].blinkMs, 100, 2000);
     config.macro[i].alertEndOn = true;
@@ -2289,6 +2289,25 @@ bool renderBootFrame(uint32_t elapsed,uint8_t frame[][3]) {
   }
   return true;
 }
+bool isLibraryId(int id){return id>=32&&id<48;}
+void renderCueFrame(const uint8_t* data,uint8_t intensity,uint32_t elapsed,uint8_t frame[][3]){
+  uint32_t total=0;
+  for(uint8_t n=0;n<data[5];n++){const uint8_t* c=data+8+n*112;total+=(c[0]|((uint16_t)c[1]<<8))+(c[2]|((uint16_t)c[3]<<8));}
+  if(!total){memset(frame,0,108);return;}
+  uint32_t t=elapsed%total;
+  for(uint8_t n=0;n<data[5];n++){
+    const uint8_t* c=data+8+n*112;uint16_t fade=c[2]|((uint16_t)c[3]<<8);
+    uint32_t duration=(c[0]|((uint16_t)c[1]<<8))+fade;
+    if(t>=duration){t-=duration;continue;}
+    const uint8_t* previous=data+8+(n?n-1:data[5]-1)*112;
+    float mix=fade?motionClamp(t/(float)fade):1;
+    for(uint8_t led=0;led<36;led++)for(uint8_t k=0;k<3;k++){
+      uint8_t a=(!n&&elapsed<total)?0:previous[4+led*3+k];
+      frame[led][k]=(uint8_t)((a+(c[4+led*3+k]-a)*mix)*(intensity>100?100:intensity)/100.0f);
+    }
+    return;
+  }
+}
 // END PORTABLE MOTION ENGINE
 
 void showMotionFrame(const uint8_t frame[][3]) {
@@ -2367,6 +2386,11 @@ static int customOwner=-1;
 static bool customValid=false;
 static bool customPreview=false;
 static bool customPreviewAlert=false;
+static bool libraryPreviewActive=false,libraryPreviewPlaying=false;
+static uint8_t libraryPreviewCue=0;
+static unsigned long libraryPreviewStarted=0,libraryPreviewLastFrame=0;
+static char libraryPreviewToken[41]={};
+
 uint16_t customWord(const uint8_t* p){return p[0]|((uint16_t)p[1]<<8);}
 bool validCustom(const uint8_t* p){
   if(memcmp(p,"CUE1",4)||p[4]!=1||p[5]<1||p[5]>12||p[6]||p[7])return false;
@@ -2381,36 +2405,32 @@ bool validCustom(const uint8_t* p){
 bool loadCustom(uint8_t i){
   if(customOwner==i)return customValid;
   customOwner=i;customValid=false;
-  char path[24];snprintf(path,sizeof(path),"/custom%u.bin",i);
+  char path[24];snprintf(path,sizeof(path),isLibraryId(i)?"/anim%u.bin":"/custom%u.bin",i);
   File f=LittleFS.open(path,"r");
   if(!f)return false;
-  bool ok=f.size()==sizeof(customData)&&f.read(customData,sizeof(customData))==sizeof(customData);
+  bool ok=f.size()==sizeof(customData)+(isLibraryId(i)?64:0);
+  if(isLibraryId(i)){uint8_t name[64];ok=ok&&f.read(name,64)==64;}
+  ok=ok&&f.read(customData,sizeof(customData))==sizeof(customData);
   f.close();customValid=ok&&validCustom(customData);return customValid;
 }
 void renderCustomOutput(uint8_t i,unsigned long elapsed,bool alert=false){
   MacroConfig& m=config.macro[i];
   if(!loadCustom(i+(alert?MACRO_COUNT:0))){setRGBLevel(m.r,m.g,m.b,m.intensity);return;}
-  uint32_t total=0;for(uint8_t n=0;n<customData[5];n++)total+=customWord(customData+8+n*112)+customWord(customData+10+n*112);
-  uint32_t t=elapsed%total;
-  for(uint8_t n=0;n<customData[5];n++){
-    const uint8_t* c=customData+8+n*112;uint16_t fade=customWord(c+2);
-    uint32_t duration=customWord(c)+fade;
-    if(t>=duration){t-=duration;continue;}
-    const uint8_t* previous=customData+8+(n?n-1:customData[5]-1)*112;
-    float mix=fade?motionClamp(t/(float)fade):1;
-    uint8_t frame[36][3];
-    for(uint8_t led=0;led<36;led++)for(uint8_t k=0;k<3;k++){
-      uint8_t a=(!n&&elapsed<total)?0:previous[4+led*3+k];
-      frame[led][k]=(uint8_t)((a+(c[4+led*3+k]-a)*mix)*m.intensity/100.0f);
-    }
-    showMotionFrame(frame);updateLedStatusReference(m.r,m.g,m.b,m.intensity);return;
-  }
+  uint8_t frame[36][3];renderCueFrame(customData,m.intensity,elapsed,frame);
+  showMotionFrame(frame);updateLedStatusReference(m.r,m.g,m.b,m.intensity);
+}
+void renderLibraryOutput(uint8_t i,uint8_t id,unsigned long elapsed){
+  MacroConfig& m=config.macro[i];
+  if(!loadCustom(id)){setRGBLevel(m.r,m.g,m.b,m.intensity);return;}
+  uint8_t frame[36][3];renderCueFrame(customData,m.intensity,elapsed,frame);
+  showMotionFrame(frame);updateLedStatusReference(m.r,m.g,m.b,m.intensity);
 }
 
 void renderMacroDirect(uint8_t i) {
   if (i >= MACRO_COUNT) return;
 
   MacroConfig& m = config.macro[i];
+  if(!alertRunning&&isLibraryId(motionSettings.mode[i])){renderLibraryOutput(i,motionSettings.mode[i],millis()-directMotionStartedAt);return;}
   if(!alertRunning&&(motionSettings.mode[i]==10||(settingsPreviewActive&&customPreview))){renderCustomOutput(i,millis()-directMotionStartedAt,settingsPreviewActive&&customPreview&&customPreviewAlert);return;}
   if(!alertRunning&&motionSettings.mode[i])renderSpatialMotion(motionSettings.mode[i],m.r,m.g,m.b,m.intensity,millis()-directMotionStartedAt,motionSettings.cycleMs[i],true);
   else setRGBLevel(m.r, m.g, m.b, m.intensity);
@@ -2591,6 +2611,11 @@ void updateAlert() {
     return;
   }
 
+  if(isLibraryId(m.alertAnimation)){
+    if(now-alertAnimLastFrameAt<33UL)return;alertAnimLastFrameAt=now;
+    renderLibraryOutput(alertMacro,m.alertAnimation,elapsed);alertVisible=true;return;
+  }
+
   // Progression globale 0.0 -> 1.0 sur EXACTEMENT la duree demandee.
   float progress = (float)elapsed / (float)totalMs;
 
@@ -2742,6 +2767,7 @@ void updateAlert() {
 }
 
 void showMacroPreview(uint8_t i, bool directState) {
+  libraryPreviewActive=false;libraryPreviewToken[0]=0;customOwner=-1;
   customPreview=false;
   if (i >= MACRO_COUNT || alertRunning) return;
 
@@ -2768,6 +2794,7 @@ void updateSettingsPreview() {
 }
 
 void updateDirectMotion() {
+  if(libraryPreviewActive)return;
   if(alertRunning||!startupSequenceComplete)return;
   int i=settingsPreviewActive&&previewMotionDirect?previewMotionMacro:outputEnabled&&!settingsPreviewActive?activeMacro:-1;
   if(i<0||i>=MACRO_COUNT||(motionSettings.mode[i]==0&&!(settingsPreviewActive&&customPreview)))return;
@@ -3295,6 +3322,11 @@ function updateIdleControls(){
   document.getElementById('idleIntensity').disabled=off;
 }
 
+function updateMotionControls(){
+  const custom=Number(document.getElementById('directMotion').value)>=32;
+  const cycle=document.getElementById('motionCycle');cycle.disabled=custom;cycle.hidden=custom;
+  document.querySelector('label[for="motionCycle"]').hidden=custom;
+}
 function updateAnimationHelp(){
   const v=parseInt(document.getElementById('alertAnimation').value||'0',10);
   const e=document.getElementById('animationHelp');
@@ -3317,7 +3349,8 @@ function updateAnimationHelp(){
     'La séquence personnalisée d’alerte boucle pendant la durée réglée, puis le DIRECT reprend.'
   ];
 
-  e.textContent=txt[v]||txt[0];
+  document.getElementById('blinkMs').disabled=v>=32;
+  e.textContent=v>=32?'Cette séquence boucle pendant l’alerte, puis le DIRECT reprend.':txt[v]||txt[0];
 }
 
 async function testAlert(){
@@ -3342,6 +3375,7 @@ async function deleteLogo(){
 }
 
 updateIdleControls();
+updateMotionControls();
 updateAnimationHelp();
 document.querySelectorAll('a[href]').forEach(a=>a.addEventListener('click',async e=>{
   if(!unsaved&&!savePromise&&!saveTimer)return;
@@ -3464,20 +3498,7 @@ void sendSettingsPage() {
   }
 
   sendHtmlChunk("</section>");
-  sendHtmlChunk("<section id='animations' class='section'><h2>Éditeur d’animation</h2>");
-  for(uint8_t i=0;i<MACRO_COUNT;i++){
-    c="<div class='animation-row'><div class='animation-emission'>";
-    if(logoAvailable(i)){
-      c+="<img class='animation-logo' alt='' src='/logo?i=";c+=String(i);c+="'>";
-    }
-    c+="<span>";c+=htmlEscape(String(config.macro[i].name));c+="</span></div><div class='animation-actions'>";
-    c+="<a class='animation-direct' href='/animation?i=";c+=String(i);c+="' aria-label='Éditer le direct de ";c+=htmlEscape(String(config.macro[i].name));c+="'>Direct <span aria-hidden='true'>↗</span></a>";
-    c+="<a class='animation-alert' href='/animation?i=";c+=String(i);c+="&amp;kind=alert' aria-label='Éditer l’alerte de ";c+=htmlEscape(String(config.macro[i].name));c+="'>Alerte <span aria-hidden='true'>↗</span></a></div></div>";
-    sendHtmlChunk(c);c="";
-  }
-  sendHtmlChunk("</section>");
-
-
+  sendHtmlChunk("<section id='animations' class='section'><h2>Éditeur d’animation</h2><p>Créez vos séquences et retrouvez-les dans toutes les émissions.</p><a class='save library-entry' href='/animation'>Ouvrir l’éditeur →</a></section>");
 
   c =
     "<form method='POST' action='/saveGeneral'>"
@@ -3685,7 +3706,7 @@ void sendMacroSettingsPage(uint8_t i) {
   c += "%</span></label><input id='directIntensity' type='range' min='0' max='100' value='";
   c += String(m.intensity);
   c += "' oninput=\"document.getElementById('directIv').textContent=this.value+'%';preview('direct');scheduleSave()\" onchange='saveNow()'></div>";
-  c += "</div><label for='directMotion'>Animation en direct</label><select id='directMotion' onchange=\"preview('direct');saveNow()\">";
+  c += "</div><label for='directMotion'>Animation en direct</label><select id='directMotion' onchange=\"updateMotionControls();preview('direct');saveNow()\">";
   c += "<option value='0'";if(motionSettings.mode[i]==0)c += " selected";c += ">Fixe</option>";
   c += "<option value='1'";if(motionSettings.mode[i]==1)c += " selected";c += ">Respiration</option>";
   c += "<option value='2'";if(motionSettings.mode[i]==2)c += " selected";c += ">Balayage gauche → droite</option>";
@@ -3696,7 +3717,8 @@ void sendMacroSettingsPage(uint8_t i) {
   c += "<option value='7'";if(motionSettings.mode[i]==7)c += " selected";c += ">Ouverture depuis le centre</option>";
   c += "<option value='8'";if(motionSettings.mode[i]==8)c += " selected";c += ">Balayage haut → bas</option>";
   c += "<option value='9'";if(motionSettings.mode[i]==9)c += " selected";c += ">Balayage bas → haut</option>";
-  c += "<option value='10'";if(motionSettings.mode[i]==10)c += " selected";c += ">Animation personnalisée</option>";
+  if(motionSettings.mode[i]==10)c += "<option value='10' selected>Ancienne séquence DIRECT</option>";
+  c += libraryOptions(motionSettings.mode[i]);
   c += "</select><label for='motionCycle'>Durée d’un cycle</label><select id='motionCycle' onchange=\"preview('direct');saveNow()\">";
   const uint16_t cycles[]={1000,2000,3000,4000,6000,8000,12000};
   for(uint8_t n=0;n<7;n++){
@@ -3704,7 +3726,7 @@ void sendMacroSettingsPage(uint8_t i) {
     if(motionSettings.cycleMs[i]==cycles[n])c += " selected";
     c += ">";c += String(cycles[n]/1000);c += " s</option>";
   }
-  c += "</select><div class='editor-link'><a class='save' href='/animation?i=";c += String(i);c += "'>Éditeur d’animation →</a></div></section>";
+  c += "</select><div class='editor-link'><a class='save' href='/animation'>Éditeur d’animation →</a></div></section>";
 
   sendHtmlChunk(c);
   c = "";
@@ -3771,9 +3793,10 @@ void sendMacroSettingsPage(uint8_t i) {
   c += "<option value='11'";if(m.alertAnimation==11)c += " selected";c += ">Arc-en-ciel horizontal</option>";
   c += "<option value='12'";if(m.alertAnimation==ALERT_SWEEP_TB)c += " selected";c += ">Balayage haut → bas</option>";
   c += "<option value='13'";if(m.alertAnimation==ALERT_SWEEP_BT)c += " selected";c += ">Balayage bas → haut</option>";
-  c += "<option value='14'";if(m.alertAnimation==ALERT_CUSTOM)c += " selected";c += ">Animation personnalisée</option>";
+  if(m.alertAnimation==ALERT_CUSTOM)c += "<option value='14' selected>Ancienne séquence ALERTE</option>";
+  c += libraryOptions(m.alertAnimation);
   c += "</select>";
-  c += "<div class='editor-link'><a class='save' href='/animation?i=";c+=String(i);c+="&amp;kind=alert'>Éditeur d’animation d’alerte →</a></div>";
+  c += "<div class='editor-link'><a class='save' href='/animation'>Éditeur d’animation →</a></div>";
 
 
   c += "<div id='animationHelp' class='small' style='margin-top:7px'></div>";
@@ -4422,7 +4445,8 @@ bool readMacroRequest(uint8_t& idx,
   idleIntensity = constrain(server.arg("idleIntensity").toInt(), 0, 100);
   idleOff = server.arg("idleOff") == "1";
 
-  alertAnimation = constrain(server.arg("alertAnimation").toInt(), (int)ALERT_CLASSIC, (int)ALERT_CUSTOM);
+  int requestedAnimation=server.arg("alertAnimation").toInt();
+  alertAnimation=(requestedAnimation>=0&&requestedAnimation<=ALERT_CUSTOM)||isLibraryId(requestedAnimation)?requestedAnimation:ALERT_CLASSIC;
   alertDuration = constrain(server.arg("alertDuration").toInt(), 1, 60);
   blinkMs = constrain(server.arg("blinkMs").toInt(), 100, 2000);
 
@@ -4704,6 +4728,8 @@ void handleFactoryReset() {
     motionSettings=previousMotion;motionSavedChecksum=previousChecksum;
     server.send(500,"text/plain","Impossible de reinitialiser les animations");return;
   }
+  for(uint8_t id=32;id<48;id++){char path[24];snprintf(path,sizeof(path),"/anim%u.bin",id);LittleFS.remove(path);}
+  LittleFS.remove("/library.migrated");
   setDefaults();
   saveConfig();
   for (uint8_t i=0;i<MACRO_COUNT;i++) {
@@ -5037,23 +5063,180 @@ void redirectCaptivePortal() {
               "ON AIR - Ouvrir la configuration</a></body></html>");
 }
 
+// Shared, named library: 16 slots, one atomic file = 64-byte name + checked cues.
+bool validLibraryName(const char* name){
+  size_t n=strlen(name);if(!n||n>63||name[0]==' '||name[n-1]==' ')return false;
+  for(size_t i=0;i<n;i++)if((uint8_t)name[i]<32||name[i]==127)return false;
+  return true;
+}
+bool libraryReadName(uint8_t id,char* name){
+  if(!isLibraryId(id))return false;
+  char path[24];snprintf(path,sizeof(path),"/anim%u.bin",id);File f=LittleFS.open(path,"r");
+  if(!f)return false;
+  bool ok=f.size()==1420&&f.read(reinterpret_cast<uint8_t*>(name),64)==64;f.close();
+  if(!ok||!memchr(name,0,64))return false;
+  return validLibraryName(name);
+}
+bool libraryWrite(uint8_t id,const char* name,const uint8_t* data){
+  if(!isLibraryId(id)||!validLibraryName(name)||!validCustom(data))return false;
+  char path[24],temp[24],header[64]={};strncpy(header,name,63);
+  snprintf(path,sizeof(path),"/anim%u.bin",id);snprintf(temp,sizeof(temp),"/anim%u.tmp",id);
+  File f=LittleFS.open(temp,"w");if(!f)return false;
+  bool ok=f.write(reinterpret_cast<const uint8_t*>(header),64)==64&&f.write(data,1356)==1356;
+  f.flush();f.close();if(!ok||!LittleFS.rename(temp,path))return false;
+  if(customOwner==id)customOwner=-1;return true;
+}
+bool libraryNamesEqual(const char* a,const char* b){
+  uint8_t previousA=0,previousB=0;
+  while(*a&&*b){
+    uint8_t x=(uint8_t)*a++,y=(uint8_t)*b++,rawA=x,rawB=y;
+    if(x>='A'&&x<='Z')x+=32;if(y>='A'&&y<='Z')y+=32;
+    if(previousA==0xC3&&x>=0x80&&x<=0x9E&&x!=0x97)x+=32;
+    if(previousB==0xC3&&y>=0x80&&y<=0x9E&&y!=0x97)y+=32;
+    if(x!=y)return false;previousA=rawA;previousB=rawB;
+  }
+  return !*a&&!*b;
+}
+String libraryOptions(uint8_t selected){
+  String out;char name[64];
+  for(uint8_t id=32;id<48;id++)if(libraryReadName(id,name)){
+    out+="<option value='";out+=String(id);out+="'";if(id==selected)out+=" selected";
+    out+=">";out+=htmlEscape(String(name));out+="</option>";
+  }
+  return out;
+}
+void migrateAnimationLibrary(){
+  if(LittleFS.exists("/library.migrated"))return;
+  bool ok=true,changed=false;
+  for(uint8_t k=0;k<8;k++){
+    if(!loadCustom(k))continue;
+    uint8_t id=32+k;char name[64];
+    if(!libraryReadName(id,name)){
+      snprintf(name,sizeof(name),"%s %u · %s",config.macro[k%4].name,k%4+1,k<4?"Direct":"Alerte");
+      if(!libraryWrite(id,name,customData)){ok=false;continue;}
+    }
+    if(k<4&&motionSettings.mode[k]==10){motionSettings.mode[k]=id;changed=true;}
+    if(k>=4&&config.macro[k-4].alertAnimation==ALERT_CUSTOM){config.macro[k-4].alertAnimation=id;changed=true;}
+  }
+  if(changed){if(!saveMotionSettings())return;saveConfig();}
+  if(ok){File f=LittleFS.open("/library.migrated","w");if(f){const uint8_t one=1;f.write(&one,1);f.close();}}
+  customOwner=-1;
+}
+bool decodeCueRequest(uint8_t* data){
+  String hex=server.arg("data");if(hex.length()!=2712)return false;
+  for(size_t n=0;n<1356;n++){
+    char a=hex[n*2],b=hex[n*2+1];
+    int hi=a>='0'&&a<='9'?a-'0':a>='a'&&a<='f'?a-'a'+10:-1;
+    int lo=b>='0'&&b<='9'?b-'0':b>='a'&&b<='f'?b-'a'+10:-1;
+    if(hi<0||lo<0)return false;data[n]=(hi<<4)|lo;
+  }
+  return validCustom(data);
+}
+void handleLibraryList(){
+  String out="[";char name[64];bool first=true;
+  for(uint8_t id=32;id<48;id++)if(libraryReadName(id,name)){
+    if(!first)out+=",";first=false;out+="{\"id\":";out+=String(id);out+=",\"name\":\"";out+=jsonEscape(String(name));out+="\"}";
+  }
+  out+="]";server.sendHeader("Cache-Control","no-store");server.send(200,"application/json",out);
+}
+void handleLibraryGet(){
+  int id=server.arg("id").toInt();char name[64];
+  if(!isLibraryId(id)||!libraryReadName(id,name)){server.send(404,"text/plain","Animation introuvable");return;}
+  char path[24];snprintf(path,sizeof(path),"/anim%u.bin",id);File f=LittleFS.open(path,"r");uint8_t header[64];
+  if(!f||f.read(header,64)!=64){server.send(500,"text/plain","Lecture impossible");return;}
+  server.sendHeader("Cache-Control","no-store");server.setContentLength(1356);server.send(200,"application/octet-stream","");
+  uint8_t chunk[256];while(f.available()){size_t n=f.read(chunk,sizeof(chunk));if(!n)break;server.client().write(chunk,n);}f.close();
+}
+void handleLibrarySave(){
+  String name=server.arg("name");name.trim();
+  if(!name.length()){server.send(400,"text/plain","Veuillez renseigner un nom pour l’animation.");return;}
+  if(!validLibraryName(name.c_str())){server.send(400,"text/plain","Veuillez choisir un nom plus court, sans retour à la ligne.");return;}
+  int requested=server.hasArg("id")?server.arg("id").toInt():-1;
+  if(requested!=-1&&!isLibraryId(requested)){server.send(400,"text/plain","Animation invalide");return;}
+  char previous[64];int freeId=-1;
+  if(requested!=-1&&!libraryReadName(requested,previous)){server.send(404,"text/plain","Cette animation n’existe plus");return;}
+  for(uint8_t id=32;id<48;id++){
+    if(libraryReadName(id,previous)){
+      if(id!=requested&&libraryNamesEqual(previous,name.c_str())){server.send(409,"text/plain","Ce nom est déjà utilisé. Veuillez saisir un nom différent.");return;}
+    }else if(freeId<0)freeId=id;
+  }
+  int id=requested==-1?freeId:requested;
+  if(id<0){server.send(409,"text/plain","La bibliothèque contient déjà 16 animations. Supprimez une séquence pour en ajouter une.");return;}
+  uint8_t data[1356];if(!decodeCueRequest(data)){server.send(400,"text/plain","Séquence invalide");return;}
+  if(!libraryWrite(id,name.c_str(),data)){server.send(500,"text/plain","Enregistrement impossible. La séquence précédente est conservée.");return;}
+  server.send(200,"application/json",String("{\"id\":")+String(id)+"}");
+}
+void handleLibraryDelete(){
+  int id=server.arg("id").toInt();char name[64];
+  if(!isLibraryId(id)||!libraryReadName(id,name)){server.send(404,"text/plain","Animation introuvable");return;}
+  MotionSettings previous=motionSettings;
+  for(uint8_t i=0;i<MACRO_COUNT;i++)if(motionSettings.mode[i]==id)motionSettings.mode[i]=0;
+  if(!saveMotionSettings()){motionSettings=previous;server.send(500,"text/plain","Suppression impossible");return;}
+  for(uint8_t i=0;i<MACRO_COUNT;i++)if(config.macro[i].alertAnimation==id)config.macro[i].alertAnimation=ALERT_CLASSIC;
+  saveConfig();char path[24];snprintf(path,sizeof(path),"/anim%u.bin",id);
+  if(!LittleFS.remove(path)){server.send(500,"text/plain","Suppression du fichier impossible");return;}
+  if(customOwner==id)customOwner=-1;
+  if(!settingsPreviewActive&&!alertRunning)renderCurrentOutput();server.send(200,"text/plain","Animation supprimée");
+}
+void stopLibraryPreview(){
+  if(!libraryPreviewActive)return;
+  libraryPreviewActive=false;libraryPreviewToken[0]=0;
+  if(settingsPreviewActive){settingsPreviewActive=false;renderCurrentOutput();}
+  customOwner=-1;
+}
+void updateLibraryPreview(){
+  if(!libraryPreviewActive)return;
+  if(!settingsPreviewActive||customOwner!=-2){libraryPreviewActive=false;libraryPreviewToken[0]=0;customOwner=-1;return;}
+  if((long)(millis()-settingsPreviewUntil)>=0){stopLibraryPreview();return;}
+  if(millis()-libraryPreviewLastFrame<33UL)return;libraryPreviewLastFrame=millis();
+  uint8_t frame[36][3];
+  if(libraryPreviewPlaying)renderCueFrame(customData,100,millis()-libraryPreviewStarted,frame);
+  else memcpy(frame,customData+12+libraryPreviewCue*112,108);
+  showMotionFrame(frame);
+}
+void handleLibraryPreview(){
+  String token=server.arg("token");
+  if(!token.length()||token.length()>40){server.send(400,"text/plain","Session invalide");return;}
+  if(libraryPreviewActive&&!settingsPreviewActive){libraryPreviewActive=false;libraryPreviewToken[0]=0;customOwner=-1;}
+  if(libraryPreviewActive&&token!=libraryPreviewToken){server.send(409,"text/plain","Un autre aperçu est déjà actif");return;}
+  if(outputEnabled||alertRunning){server.send(409,"text/plain","Arrêtez le direct ou l’alerte avant d’activer l’aperçu.");return;}
+  uint8_t data[1356];if(!decodeCueRequest(data)){server.send(400,"text/plain","Séquence invalide");return;}
+  int cue=server.arg("cue").toInt();if(cue<0||cue>=data[5]){server.send(400,"text/plain","Étape invalide");return;}
+  cancelStartupIndicator();settingsPreviewActive=true;customPreview=false;
+  memcpy(customData,data,1356);customOwner=-2;customValid=true;
+  libraryPreviewActive=true;strlcpy(libraryPreviewToken,token.c_str(),sizeof(libraryPreviewToken));
+  libraryPreviewCue=cue;libraryPreviewPlaying=server.arg("play")=="1";
+  unsigned long elapsed=constrain(server.arg("elapsed").toInt(),0,1000000);
+  libraryPreviewStarted=millis()-elapsed;libraryPreviewLastFrame=millis()-33UL;
+  settingsPreviewUntil=millis()+3000UL;updateLibraryPreview();server.send(200,"text/plain","Aperçu actif");
+}
+void handleLibraryPreviewPing(){
+  if(!libraryPreviewActive||!settingsPreviewActive||customOwner!=-2||server.arg("token")!=libraryPreviewToken){server.send(409,"text/plain","Aperçu interrompu");return;}
+  settingsPreviewUntil=millis()+3000UL;server.send(200,"text/plain","OK");
+}
+void handleLibraryPreviewStop(){
+  if(server.arg("token")==libraryPreviewToken)stopLibraryPreview();server.send(200,"text/plain","OK");
+}
+
 static const char ANIMATION_EDITOR_HTML[] PROGMEM = R"EDITOR(<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Animation · ON AIR</title><script>try{document.documentElement.dataset.theme=localStorage.getItem('onair-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script><link rel="stylesheet" href="/style.css"><style>
 body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.editor{max-width:680px;margin:auto;padding:22px 20px 50px}.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.editor .bar button,.editor .cues button{background:var(--panel);color:var(--text);border:1px solid var(--line)}.editor .cues button.selected{background:#4669e8;color:white}.board{position:relative;margin:30px 17px;width:calc(100% - 34px);height:210px;border-radius:28px;background:var(--panel);box-shadow:inset 0 0 35px #00000010}.led{position:absolute;width:25px;height:25px;min-height:0;padding:0;border-radius:50%;transform:translate(-50%,-50%);border:2px solid #777;box-shadow:0 0 8px var(--led)}.led[aria-pressed=true]{outline:3px solid #6489ff;outline-offset:3px}.board strong{position:absolute;inset:0;display:grid;place-items:center;font-size:32px;letter-spacing:5px;pointer-events:none;opacity:.2}.cues{display:flex;gap:8px;overflow:auto;padding:8px 3px}.section input[type=color]{height:48px;padding:2px;width:75px}.primary{background:#4669e8!important;color:white!important}.status{min-height:24px;font-size:13px;line-height:1.5;margin:16px 0}.led:active{transform:translate(-50%,-50%)}a{color:inherit}h1{font-size:25px;letter-spacing:-1px}.section button{min-height:42px}.small{margin:10px 0}
-</style><main class="editor"><a id="back" href="/settings">← Retour</a><h1>Animation personnalisée</h1><p class="small">Sélectionnez des LED, choisissez une couleur, puis ajoutez vos étapes.</p><div class="board" id="board"><strong>ON AIR</strong></div><div class="bar" id="groups"></div><section class="section"><div class="bar"><input aria-label="Couleur des LED sélectionnées" id="color" type="color" value="#ff0000"><div class="bar" id="palette"></div></div><p class="small" id="selection"></p><div class="cues" id="cues"></div><div class="bar"><button id="add">+ Étape</button><button id="duplicate">Dupliquer</button><button id="remove">Supprimer</button><button id="earlier" aria-label="Déplacer avant">←</button><button id="later" aria-label="Déplacer après">→</button></div><div class="grid2"><div><label for="hold">Maintien (secondes)</label><input id="hold" type="number" min="0.1" max="60" step="0.1" value="1"></div><div><label for="transition">Transition vers cette étape</label><select id="transition"><option value="cut">Directe</option><option value="fade">Fondu</option></select></div><div><label for="fade">Fondu (secondes)</label><input id="fade" type="number" min="0.1" max="20" step="0.1" value="1" disabled></div></div><p class="small">12 étapes maximum. La séquence boucle ; le premier fondu commence au noir. La luminosité reste celle de l’émission.</p><div class="bar"><button id="play">Lire l’aperçu</button><button id="save" class="primary">Enregistrer</button><button id="test">Tester sur le boîtier</button><button id="off">OFF</button></div><p class="status" id="status" role="status" aria-live="polite"></p><div class="bar"><button id="export">Exporter</button><button id="import">Importer</button><input id="file" type="file" accept=".onair" hidden></div><p class="small">Après enregistrement, choisissez « Animation personnalisée » dans les réglages DIRECT ou ALERTE correspondants de l’émission. Les deux séquences sont indépendantes. Exportez ici vos séquences pour les sauvegarder séparément des réglages du boîtier.</p></section></main><script>
+
+.editor-meta label{margin-top:0}.editor-meta #animationName{margin-bottom:18px}.editor-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}.preview-switch{display:flex!important;align-items:center;gap:10px;margin:0!important;font-size:13px!important;line-height:1.3;cursor:pointer}.preview-switch input{appearance:none;-webkit-appearance:none;position:relative;width:44px!important;min-width:44px;min-height:26px!important;height:26px!important;border:0!important;border-radius:20px!important;background:#c3c7d3!important;cursor:pointer}.preview-switch input:checked{background:#4669e8!important}.preview-switch input:before{content:'';position:absolute;width:20px;height:20px;border-radius:50%;background:white;left:3px;top:3px;transition:transform .15s}.preview-switch input:checked:before{transform:translateX(18px)}.editor .status{margin:12px 0 0;min-height:18px}.playbar{display:flex;justify-content:center;margin:14px 0 20px}.playbar button{background:var(--panel);color:var(--text);border:1px solid var(--line);padding:10px 20px}.library-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.library-heading h2{font-size:20px;margin:0}.library-heading h2 span{font-size:12px;color:var(--muted);font-weight:400}.library-heading button{background:transparent;color:var(--text);padding:7px 10px;font-size:13px}.library-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}.library-row:last-child{border:0}.library-select{flex:1;min-width:0;justify-content:flex-start;text-align:left;background:transparent;color:var(--text);padding:8px 0;font-size:14px}.library-select span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.library-select:before{content:'○';color:var(--muted);font-size:21px}.library-select[aria-pressed=true]:before{content:'✓';color:#6489ff}.library-delete{width:40px;min-width:40px;min-height:40px!important;padding:0;border-radius:12px;background:#ff525215;color:#e65b64;font-size:24px}.library-empty{font-size:13px;color:var(--muted);padding:16px 0}.editor-meta .primary{white-space:nowrap;padding:10px 16px}.editor .editor-meta input[type=text]{font-size:16px}.editor-meta .preview-switch span{max-width:130px}@media(max-width:350px){.editor-toolbar{align-items:stretch;flex-direction:column}.editor-meta .preview-switch span{max-width:none}.editor-meta .preview-switch{justify-content:space-between;padding:6px 0}}
+</style><main class="editor"><a id="back" href="/settings">← Retour</a><h1>Éditeur d’animation</h1><section class="section editor-meta"><label for="animationName">Nom de l’animation</label><input id="animationName" type="text" maxlength="32" placeholder="Ex. Alerte studio" autocomplete="off"><div class="editor-toolbar"><label class="preview-switch"><input id="physicalPreview" type="checkbox" role="switch"><span>Aperçu sur le boîtier</span></label><button id="save" class="primary">Enregistrer</button></div><p class="status" id="status" role="status" aria-live="polite"></p></section><div class="board" id="board"><strong>ON AIR</strong></div><div class="bar" id="groups"></div><div class="playbar"><button id="play">Lire la séquence</button></div><section class="section"><div class="bar"><input aria-label="Couleur des LED sélectionnées" id="color" type="color" value="#ff0000"><div class="bar" id="palette"></div></div><p class="small" id="selection"></p><div class="cues" id="cues"></div><div class="bar"><button id="add">+ Étape</button><button id="duplicate">Dupliquer</button><button id="remove">Supprimer</button><button id="earlier" aria-label="Déplacer avant">←</button><button id="later" aria-label="Déplacer après">→</button></div><div class="grid2"><div><label for="hold">Maintien (secondes)</label><input id="hold" type="number" min="0.1" max="60" step="0.1" value="1"></div><div><label for="transition">Transition vers cette étape</label><select id="transition"><option value="cut">Directe</option><option value="fade">Fondu</option></select></div><div><label for="fade">Fondu (secondes)</label><input id="fade" type="number" min="0.1" max="20" step="0.1" value="1" disabled></div></div><p class="small">12 étapes maximum · Maintien et fondu par étape.</p><div class="bar"><button id="export">Exporter</button><button id="import">Importer</button><input id="file" type="file" accept=".onair" hidden></div></section><section class="section"><div class="library-heading"><h2>Mes animations <span id="libraryCount"></span></h2><button id="newAnimation">+ Nouvelle</button></div><div id="libraryList"></div><p class="small">Disponibles dans les menus Direct et Alerte de toutes les émissions.</p></section></main><script>
 'use strict';
-const $=id=>document.getElementById(id),query=new URLSearchParams(location.search),i=Number(query.get('i'))||0,isAlert=query.get('kind')==='alert',suffix='&kind='+(isAlert?'alert':'direct');
-if(isAlert)document.querySelector('h1').textContent='Animation d’alerte';
-$('back').href='/macro?i='+i;
+const $=id=>document.getElementById(id),token=crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
+$('back').href='/settings#animations';
+let library=[],editingId=null,saving=false,loading=false,previewTimer=0,previewQueue=Promise.resolve(),previewFailed=false;
 let cues=[{hold:1000,fade:0,rgb:Array(108).fill(0)}],current=0,selected=new Set(Array.from({length:36},(_,n)=>n)),dirty=false,playing=false,started=0;
 const buttons=[];const cue=()=>cues[current];
-function mark(){dirty=true;$('status').textContent='Modifications non enregistrées';}
+function mark(){dirty=true;$('status').textContent='Modifications non enregistrées';queuePreview();}
 function draw(rgb=cue().rgb){buttons.forEach((b,n)=>{const c='rgb('+rgb.slice(n*3,n*3+3).join(',')+')';b.style.background=c;b.style.setProperty('--led',c);b.setAttribute('aria-pressed',selected.has(n));});$('selection').textContent=selected.size+' LED sélectionnée'+(selected.size>1?'s':'');}
 for(let n=0;n<36;n++){const x=n<12?(11-n)/11:n<17?0:n<31?(n-17)/13:1,y=n<12?1:n<17?(17-n)/6:n<31?0:(n-30)/6;const b=document.createElement('button');b.className='led';b.style.left=(x*100)+'%';b.style.top=(y*100)+'%';b.title='LED '+(n+1);b.setAttribute('aria-label','LED '+(n+1));b.onclick=()=>{stop();selected.has(n)?selected.delete(n):selected.add(n);draw();};$('board').append(b);buttons.push(b);}
 for(const [name,fn] of [['Tout',n=>true],['Aucune',n=>false],['Haut',n=>n>=17&&n<31],['Bas',n=>n<12],['Gauche',n=>n>=12&&n<17],['Droite',n=>n>=31]]){const b=document.createElement('button');b.textContent=name;b.onclick=()=>{selected=new Set(buttons.map((_,n)=>n).filter(fn));draw();};$('groups').append(b);}
 function paint(hex){stop();const rgb=[1,3,5].map(n=>parseInt(hex.slice(n,n+2),16));selected.forEach(n=>cue().rgb.splice(n*3,3,...rgb));mark();draw();}
 for(const [name,c] of [['Rouge','#ff0000'],['Cyan','#00d7d7'],['Violet','#a52ab6'],['Ambre','#ffb42b'],['Blanc','#ffffff'],['Noir','#000000']]){const b=document.createElement('button');b.setAttribute('aria-label',name);b.style.cssText='background:'+c+';width:32px;min-height:32px;padding:0;border:1px solid #888';b.onclick=()=>{$('color').value=c;paint(c);};$('palette').append(b);}
 $('color').oninput=e=>paint(e.target.value);
-function refresh(){stop();$('cues').replaceChildren();cues.forEach((c,n)=>{const b=document.createElement('button');b.textContent=String(n+1).padStart(2,'0');b.className=n===current?'selected':'';b.setAttribute('aria-pressed',n===current);b.onclick=()=>{current=n;refresh();};$('cues').append(b);});$('hold').value=cue().hold/1000;$('transition').value=cue().fade?'fade':'cut';$('fade').disabled=!cue().fade;if(cue().fade)$('fade').value=cue().fade/1000;$('add').disabled=$('duplicate').disabled=cues.length>=12;$('remove').disabled=cues.length===1;$('earlier').disabled=!current;$('later').disabled=current===cues.length-1;draw();}
+function refresh(){stop();$('cues').replaceChildren();cues.forEach((c,n)=>{const b=document.createElement('button');b.textContent=String(n+1).padStart(2,'0');b.className=n===current?'selected':'';b.setAttribute('aria-pressed',n===current);b.onclick=()=>{current=n;refresh();};$('cues').append(b);});$('hold').value=cue().hold/1000;$('transition').value=cue().fade?'fade':'cut';$('fade').disabled=!cue().fade;if(cue().fade)$('fade').value=cue().fade/1000;$('add').disabled=$('duplicate').disabled=cues.length>=12;$('remove').disabled=cues.length===1;$('earlier').disabled=!current;$('later').disabled=current===cues.length-1;draw();queuePreview();}
 $('hold').onchange=()=>{cue().hold=Math.round(Math.max(.1,Math.min(60,Number($('hold').value)||1))*1000);mark();refresh();};
 function timing(){cue().fade=$('transition').value==='fade'?Math.round(Math.max(.1,Math.min(20,Number($('fade').value)||1))*1000):0;mark();refresh();}
 $('fade').onchange=$('transition').onchange=timing;
@@ -5063,25 +5246,88 @@ $('remove').onclick=()=>{if(cues.length===1)return;cues.splice(current,1);curren
 function move(d){const next=current+d;if(next<0||next>=cues.length)return;[cues[current],cues[next]]=[cues[next],cues[current]];current=next;mark();refresh();}
 $('earlier').onclick=()=>move(-1);$('later').onclick=()=>move(1);
 function frame(elapsed){const total=cues.reduce((a,c)=>a+c.hold+c.fade,0);let t=elapsed%total;for(let n=0;n<cues.length;n++){const c=cues[n];if(t>=c.hold+c.fade){t-=c.hold+c.fade;continue;}const prev=cues[(n+cues.length-1)%cues.length],mix=c.fade?Math.min(1,t/c.fade):1;return c.rgb.map((b,k)=>{const a=n===0&&elapsed<total?0:prev.rgb[k];return Math.floor(a+(b-a)*mix);});}}
-function stop(){playing=false;$('play').textContent='Lire l’aperçu';}
+function stop(){playing=false;$('play').textContent='Lire la séquence';queuePreview();}
 function tick(now){if(!playing)return;draw(frame(now-started));requestAnimationFrame(tick);}
-$('play').onclick=()=>{if(playing){stop();draw();}else{playing=true;started=performance.now();$('play').textContent='Pause';requestAnimationFrame(tick);}};
+$('play').onclick=()=>{if(playing){stop();draw();}else{playing=true;started=performance.now();$('play').textContent='Pause';requestAnimationFrame(tick);queuePreview();}};
 function checksum(a){let h=2166136261;for(let n=0;n<1352;n++)h=Math.imul(h^a[n],16777619)>>>0;return h;}
 function encode(){const a=new Uint8Array(1356),v=new DataView(a.buffer);a.set([67,85,69,49,1,cues.length,0,0]);cues.forEach((c,n)=>{const o=8+n*112;v.setUint16(o,c.hold,true);v.setUint16(o+2,c.fade,true);a.set(c.rgb,o+4);});v.setUint32(1352,checksum(a),true);return a;}
 function decode(a){if(a.length!==1356)throw Error('Taille du fichier invalide');const v=new DataView(a.buffer,a.byteOffset,a.byteLength);if(String.fromCharCode(...a.slice(0,4))!=='CUE1'||a[4]!==1||a[5]<1||a[5]>12||a[6]||a[7]||v.getUint32(1352,true)!==checksum(a))throw Error('Fichier invalide ou endommagé');const result=[];for(let n=0;n<a[5];n++){const o=8+n*112,hold=v.getUint16(o,true),fade=v.getUint16(o+2,true);if(hold<100||hold>60000||fade>20000)throw Error('Durée invalide');result.push({hold,fade,rgb:Array.from(a.slice(o+4,o+112))});}return result;}
 async function request(url,options={}){const r=await fetch(url,{...options,signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error(await r.text()||'Connexion impossible');return r;}
-async function save(){const bytes=encode(),snapshot=Array.from(bytes).map(n=>n.toString(16).padStart(2,'0')).join('');await request('/api/custom/save?i='+i+suffix,{method:'POST',body:new URLSearchParams({data:snapshot})});if(snapshot===Array.from(encode()).map(n=>n.toString(16).padStart(2,'0')).join(''))dirty=false;$('status').textContent=dirty?'Enregistré ; de nouvelles modifications restent à enregistrer':'Animation enregistrée';}
+
+function hexData(){return Array.from(encode()).map(n=>n.toString(16).padStart(2,'0')).join('');}
+function normalizedName(value){return value.trim().normalize('NFC');}
 function action(fn){return async()=>{try{await fn();}catch(e){$('status').textContent=e.message;}};}
-$('save').onclick=action(save);
-$('test').onclick=action(async()=>{await save();const r=await request('/api/custom/test?i='+i+suffix,{method:'POST'});$('status').textContent=await r.text();});
-$('off').onclick=action(async()=>{await request('/api/off');$('status').textContent='Éteint';});
-$('export').onclick=()=>{const url=URL.createObjectURL(new Blob([encode()],{type:'application/octet-stream'})),a=document.createElement('a');a.href=url;a.download='ON_AIR_'+(isAlert?'alerte_':'direct_')+(i+1)+'.onair';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);};
-$('import').onclick=()=>$('file').click();$('file').onchange=action(async()=>{const f=$('file').files[0];if(!f)return;const parsed=decode(new Uint8Array(await f.arrayBuffer()));cues=parsed;current=0;mark();refresh();});
+function paintLibrary(){
+  $('libraryList').replaceChildren();$('libraryCount').textContent=library.length+'/16';
+  if(!library.length){const p=document.createElement('p');p.className='library-empty';p.textContent='Vos séquences enregistrées apparaîtront ici.';$('libraryList').append(p);}
+  for(const item of library){const row=document.createElement('div');row.className='library-row';
+    const select=document.createElement('button');select.className='library-select';select.setAttribute('aria-label',item.name);select.setAttribute('aria-pressed',item.id===editingId);select.disabled=saving||loading;const text=document.createElement('span');text.textContent=item.name;select.append(text);select.onclick=action(()=>loadAnimation(item));
+    const remove=document.createElement('button');remove.className='library-delete';remove.textContent='×';remove.setAttribute('aria-label','Supprimer '+item.name);remove.disabled=saving||loading;remove.onclick=action(()=>deleteAnimation(item));row.append(select,remove);$('libraryList').append(row);
+  }
+  $('newAnimation').disabled=saving||loading;
+}
+async function refreshLibrary(){library=await (await request('/api/library')).json();paintLibrary();}
+function snapshot(){return {data:hexData(),name:normalizedName($('animationName').value),id:editingId};}
+async function save(){
+  if(saving||loading)return;const saved=snapshot();
+  if(!saved.name){$('status').textContent='Veuillez renseigner un nom pour l’animation.';$('animationName').focus();return;}
+  if(library.some(item=>item.id!==saved.id&&item.name.toLocaleLowerCase('fr')===saved.name.toLocaleLowerCase('fr'))){$('status').textContent='Ce nom est déjà utilisé. Veuillez saisir un nom différent.';return;}
+  saving=true;$('save').disabled=true;paintLibrary();
+  try{const body=new URLSearchParams({name:saved.name,data:saved.data});if(saved.id!==null)body.set('id',saved.id);
+    const result=await (await request('/api/library/save',{method:'POST',body})).json();
+    editingId=result.id;const unchanged=hexData()===saved.data&&normalizedName($('animationName').value)===saved.name;
+    if(unchanged){dirty=false;$('animationName').value=saved.name;}
+    $('status').textContent=unchanged?'Animation enregistrée':'Enregistrée ; des modifications restent à enregistrer.';
+    await refreshLibrary();
+  }finally{saving=false;$('save').disabled=false;paintLibrary();}
+}
+async function loadAnimation(item){
+  if(saving||loading)return;if(dirty&&!confirm('Abandonner les modifications non enregistrées ?'))return;
+  loading=true;paintLibrary();
+  try{const parsed=decode(new Uint8Array(await (await request('/api/library/get?id='+item.id)).arrayBuffer()));cues=parsed;current=0;editingId=item.id;$('animationName').value=item.name;dirty=false;refresh();$('status').textContent='';}
+  finally{loading=false;paintLibrary();}
+}
+function clearEditor(){editingId=null;cues=[{hold:1000,fade:0,rgb:Array(108).fill(0)}];current=0;$('animationName').value='';dirty=false;refresh();paintLibrary();$('status').textContent='';}
+$('newAnimation').onclick=()=>{if(saving||loading)return;if(dirty&&!confirm('Abandonner les modifications non enregistrées ?'))return;clearEditor();};
+async function deleteAnimation(item){
+  if(saving||loading)return;await request('/api/library/delete',{method:'POST',body:new URLSearchParams({id:item.id})});
+  if(editingId===item.id)clearEditor();await refreshLibrary();$('status').textContent='Animation supprimée';
+}
+function previewError(e){$('physicalPreview').checked=false;previewFailed=true;clearTimeout(previewTimer);$('status').textContent='Aperçu arrêté : '+e.message;}
+function queuePreview(){
+  clearTimeout(previewTimer);if(!$('physicalPreview').checked)return;
+  previewTimer=setTimeout(()=>{
+    previewQueue=previewQueue.catch(()=>{}).then(async()=>{
+      if(!$('physicalPreview').checked)return;
+      const body=new URLSearchParams({token,data:hexData(),cue:current,play:playing?'1':'0',elapsed:playing?Math.floor(performance.now()-started):0});
+      try{await request('/api/library/preview',{method:'POST',body});}catch(e){previewError(e);}
+    });
+  },100);
+}
+async function stopPhysicalPreview(){
+  clearTimeout(previewTimer);$('physicalPreview').checked=false;
+  await previewQueue.catch(()=>{});await request('/api/library/preview/stop',{method:'POST',body:new URLSearchParams({token})});
+}
+$('physicalPreview').onchange=action(async()=>{
+  if($('physicalPreview').checked){previewFailed=false;queuePreview();$('status').textContent='Aperçu sur le boîtier activé';}
+  else{await stopPhysicalPreview();$('status').textContent='Aperçu sur le boîtier désactivé';}
+});
+setInterval(()=>{
+  if(!$('physicalPreview').checked)return;
+  previewQueue=previewQueue.catch(()=>{}).then(async()=>{
+    if(!$('physicalPreview').checked)return;
+    try{await request('/api/library/preview/ping',{method:'POST',body:new URLSearchParams({token})});}catch(e){previewError(e);}
+  });
+},1000);
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&$('physicalPreview').checked){stop();stopPhysicalPreview().catch(previewError);}});
+window.addEventListener('pagehide',()=>{navigator.sendBeacon('/api/library/preview/stop',new URLSearchParams({token}));});
+$('animationName').oninput=mark;$('save').onclick=action(save);
+$('export').onclick=()=>{const url=URL.createObjectURL(new Blob([encode()],{type:'application/octet-stream'})),a=document.createElement('a');a.href=url;a.download=(normalizedName($('animationName').value)||'ON_AIR_animation')+'.onair';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);};
+$('import').onclick=()=>$('file').click();$('file').onchange=action(async()=>{const f=$('file').files[0];if(!f)return;const parsed=decode(new Uint8Array(await f.arrayBuffer()));cues=parsed;current=0;if(!$('animationName').value)$('animationName').value=f.name.replace(/\.onair$/i,'').slice(0,32);mark();refresh();});
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
-refresh();(async()=>{try{const r=await request('/api/custom?i='+i+suffix);if(r.status!==204){const loaded=decode(new Uint8Array(await r.arrayBuffer()));if(!dirty){cues=loaded;current=0;refresh();}}}catch(e){$('status').textContent=e.message;}})();
+refresh();refreshLibrary().catch(e=>{$('status').textContent=e.message;});
 </script></html>)EDITOR";
 void sendAnimationPage(){
-  uint8_t i;if(!parseMacroIndex(i)){server.send(400,"text/plain","Émission invalide");return;}
   server.sendHeader("Cache-Control","no-store");server.send_P(200,"text/html; charset=utf-8",ANIMATION_EDITOR_HTML);
 }
 
@@ -5158,6 +5404,13 @@ void updateOTAVisual(){
 }
 
 void setupWebServer() {
+  server.on("/api/library",HTTP_GET,handleLibraryList);
+  server.on("/api/library/get",HTTP_GET,handleLibraryGet);
+  server.on("/api/library/save",HTTP_POST,handleLibrarySave);
+  server.on("/api/library/delete",HTTP_POST,handleLibraryDelete);
+  server.on("/api/library/preview",HTTP_POST,handleLibraryPreview);
+  server.on("/api/library/preview/ping",HTTP_POST,handleLibraryPreviewPing);
+  server.on("/api/library/preview/stop",HTTP_POST,handleLibraryPreviewStop);
   server.on("/animation",HTTP_GET,sendAnimationPage);
   server.on("/api/custom",HTTP_GET,handleCustomGet);
   server.on("/api/custom/save",HTTP_POST,handleCustomSave);
@@ -5564,6 +5817,7 @@ void setup() {
 
   loadConfig();
   loadMotionSettings();
+  migrateAnimationLibrary();
 
   // Etat initial propre, puis indicateur de progression sans ralentir le boot.
   blackout();
@@ -5600,6 +5854,7 @@ void loop() {
   // Le serveur HTTP est toujours prioritaire.
   server.handleClient();
 
+  updateLibraryPreview();
   updateOTAVisual();
   updateAlert();
   updateSettingsPreview();
