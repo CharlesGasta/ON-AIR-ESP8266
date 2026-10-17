@@ -1,5 +1,13 @@
 # Changelog
 
+## V3.4.0 — Bibliothèque commune
+
+- éditeur unique et 16 séquences nommées réutilisables en Direct/Alerte dans les quatre émissions
+- validation des noms, chargement/modification, création et suppression
+- aperçu physique temporaire piloté par interrupteur, distinct de la sauvegarde
+- migration des anciennes séquences et affectations ; formats EEPROM et backup V2 conservés
+- fichier nom + cues remplacé atomiquement ; aperçu sans écriture flash, bail de 3 s et sessions révoquées après arrêt
+
 ## V3.3.2 — Menu de l’éditeur
 
 - lignes compactes avec logos, noms lisibles et accès Direct / Alerte centrés

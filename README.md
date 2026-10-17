@@ -2,6 +2,16 @@
 
 Contrôleur **ON AIR RGB autonome** basé sur ESP8266 / NodeMCU 1.0 (ESP-12E), avec interface Web mobile.
 
+## V3.4.0 — Une bibliothèque commune d’animations
+
+Un seul accès **Réglages → Éditeur d’animation**. Donner un nom puis Enregistrer crée une animation disponible par son nom dans les menus Direct et Alerte des quatre émissions. Jusqu’à 16 séquences communes, chacune de 12 étapes. Charger une ligne permet de la modifier ; Nouvelle crée une autre séquence ; la croix rouge supprime la séquence et ses affectations. Les noms vides ou déjà utilisés par une autre séquence sont refusés.
+
+**Aperçu sur le boîtier** est un interrupteur indépendant de l’enregistrement : décoché, le travail reste dans le navigateur ; coché, l’étape choisie, ses couleurs et la lecture locale sont reflétées physiquement. Rien n’est écrit en mémoire permanente par l’aperçu. Il s’arrête à la désactivation ou après 3 s sans renouvellement et ne peut reprendre avec une ancienne session après une commande du boîtier.
+
+Les anciennes séquences Direct/Alerte sont migrées automatiquement avec leurs affectations, sous des noms propres à leur émission d’origine. Le format EEPROM historique reste identique. Les nouveaux noms et couleurs sont enregistrés ensemble de façon atomique ; exporter les fichiers `.onair` pour sauvegarder les séquences séparément du fichier général de configuration.
+
+Détails : [notes v3.4.0](docs/releases/v3.4.0.md).
+
 ## V3.3.2 — Menu de l’éditeur épuré
 
 La rubrique Éditeur d’animation présente quatre lignes avec logos et noms d’émission, et deux accès Direct / Alerte compacts et centrés. Teintes distinctes adaptées au clair/sombre et espacement optimisé pour téléphone. Aucun changement des animations ou des réglages sauvegardés.
