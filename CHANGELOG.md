@@ -1,5 +1,15 @@
 # Changelog
 
+## V3.2.0 — Thèmes et animations spatiales
+
+- choix clair/sombre mémorisé dans le navigateur
+- cartographie confirmée 12 bas / 5 gauche / 14 haut / 5 droite, départ bas droit
+- huit modes en DIRECT avec période par émission ; cinq nouvelles alertes spatiales
+- cinématique arc-en-ciel, flash, montée blanche et expansion rouge, puis états Wi-Fi
+- démarrage non bloquant et interruptible par les commandes ; échec externe distinct du mode autonome
+- extension de réglages LittleFS sans modifier le format EEPROM ; sauvegardes V2 et import V1
+- tests C++ du moteur, de la persistance et de la priorité des commandes avant compilation
+
 ## V3.1.1 — Interface épurée
 
 - nouveau dessin clair : cartes arrondies, boutons teintés, icônes et police système

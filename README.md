@@ -2,11 +2,11 @@
 
 Contrôleur **ON AIR RGB autonome** basé sur ESP8266 / NodeMCU 1.0 (ESP-12E), avec interface Web mobile.
 
-## V3.1.1 — Interface épurée
+## V3.2.0 — Thèmes et animations spatiales
 
-Console mobile claire et sobre : nom du boîtier, connexion, quatre émissions, roue crantée et OFF. Cartes arrondies, logos sans cadre ajouté et boutons teintés avec icônes. Typographie native sur iPhone et autres appareils ; aucune ressource Internet nécessaire. Les réglages sauvegardés et les 36 WS2812E à 100 % restent conservés.
+Choix clair/sombre, animations DIRECT par émission, balayages adaptés au placement 12/5/14/5 des LED, respiration, comète et arc-en-ciel. Nouvelle cinématique de démarrage puis indications de connexion Wi-Fi et de mode autonome. Le téléphone conserve l'interface épurée ; les réglages historiques sont préservés.
 
-Installation et validation : [notes de version](docs/releases/v3.1.1.md).
+Installation, choix des animations et signification des signaux : [notes de version](docs/releases/v3.2.0.md).
 
 ## Fonctions
 
@@ -43,7 +43,7 @@ Pour mesurer : commencer à faible intensité, monter progressivement, surveille
 
 La V3.0.3 pilote les 36 LED WS2812E 5 V confirmees sur le logo Damien.
 
-Contour vise : **200 + 50 + 200 + 50 mm = 500 mm**. La repartition exacte des **36 LED** entre les 4 cotes reste a verifier : ne pas supposer 12/3/12/3.
+Contour vise : **200 + 50 + 200 + 50 mm = 500 mm**. Répartition confirmée vue de face : **12 en bas, 5 à gauche, 14 en haut, 5 à droite**, départ bas droit, parcours vers la gauche.
 
 Le pilotage utilise uniquement **D5 / GPIO14** via un buffer logique **74AHCT125**. Les trois MOSFETs RGB analogiques de l'ancienne version ne sont plus utilisés.
 

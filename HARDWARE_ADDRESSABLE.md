@@ -1,4 +1,4 @@
-# ON AIR Damien — hardware ruban adressable V3.0.1
+# ON AIR Damien — hardware ruban adressable V3.2.0
 
 ## Ruban et nombre de pixels confirmes
 
@@ -9,7 +9,7 @@
 - Le sens de parcours du ruban definit le sens des animations.
 - Ancien perimetre cible : 200 + 50 + 200 + 50 mm = 500 mm.
 - ATTENTION : 36 LED a 60 LED/m representent 600 mm de ruban, et non 500 mm. Verifier la densite reelle et le compte des pixels par cote.
-- Ne pas supposer de repartition fixe par cote pour l'instant. Les animations V3.0.1 fonctionnent sur les 36 LED en sequence.
+- Répartition confirmée par comptage utilisateur : bas 0–11 (droite vers gauche), gauche 12–16 (bas vers haut), haut 17–30 (gauche vers droite), droite 31–35 (haut vers bas). Départ bas droit sous le R.
 
 ## Branchement simple demande : une seule alimentation USB-C, via VV
 
@@ -31,15 +31,11 @@ Condensateur 1000 uF / 10 ou 16 V, proche debut ruban :
   borne - vers GND
 ```
 
-## Limite de luminosite V3.0.3
+## Luminosité et montage retenu
 
-Le firmware limite desormais chaque sortie LED au maximum a **50 %**, quelle que soit la luminosite de la macro (jusqu'a 100 % sur l'interface) et y compris les alertes. Cette limitation sert a reduire les consommations mais ne mesure pas le courant.
+Depuis v3.0.4, intensité autorisée jusqu'à 100 %. Le ruban seul a été mesuré à 1,02 A en blanc 100 % sur alimentation de laboratoire, ESP alimenté séparément. L'utilisateur a ensuite testé l'alimentation depuis VV avec entrée USB-C et rapporte un fonctionnement stable sans échauffement constaté. Le firmware conserve ce montage ; le courant admissible constructeur de VV reste non documenté.
 
-Tableau pour 36 pixels blancs :
-- 50 % selon le fabricant WS2812E 12 mA/canal : env. 0,97 A pour ESP + ruban
-- 50 % avec hypothese haute 20 mA/canal : env. 1,40 A pour ESP + ruban
-- estimation de reserve ESP : 300 mA, sans garantie sur les pics reels
-- la source USB et la carte VV restent a qualifier physiquement
+Les nouveaux effets DIRECT respectent l'intensité maximale réglée pour l'émission.
 
 ## Limites electriques importantes
 

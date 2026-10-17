@@ -19,6 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Test motion engine and configuration compatibility
+        run: |
+          git fetch --depth=1 origin efefbef61bba26bd57feaf1d220a7d36801d6897
+          python3 tools/check-firmware.py
+          python3 tools/check-motion.py
+
       - uses: arduino/setup-arduino-cli@v2
 
       - name: Install ESP8266 core

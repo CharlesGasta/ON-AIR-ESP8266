@@ -24,6 +24,7 @@
 */
 
 #include <Arduino.h>
+#include <math.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <DNSServer.h>
@@ -33,15 +34,15 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.1.1 STUDIO MOBILE 36LED 100PCT"
+#define FIRMWARE_VERSION "3.2.0 SPATIAL 36LED 100PCT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
 // Nombre reel confirme sur le montage : 36 LED au total.
 // LED 0..35 : ordre physique de DIN vers DOUT autour du contour.
-// Les repartitions exactes aux 4 angles restent a mesurer.
-// Les effets de poursuite et dessin fonctionnent sans
-// supposer le nombre de LED par cote.
+// Disposition vue de face confirmee par utilisateur :
+// 0..11 bas droite->gauche ; 12..16 gauche bas->haut ;
+// 17..30 haut gauche->droite ; 31..35 droite haut->bas.
 // ============================================================
 const uint8_t LED_DATA_PIN = D5;       // GPIO14
 const uint16_t LED_COUNT = 36;
@@ -1369,7 +1370,12 @@ enum AlertAnimation : uint8_t {
   ALERT_ACCELERATING = 3,
   ALERT_DOUBLE_FLASH = 4,
   ALERT_LOGO_CHASE = 5,
-  ALERT_LOGO_DRAW = 6
+  ALERT_LOGO_DRAW = 6,
+  ALERT_SWEEP_LR = 7,
+  ALERT_SWEEP_RL = 8,
+  ALERT_BREATHE = 9,
+  ALERT_IRIS = 10,
+  ALERT_RAINBOW = 11
 };
 
 // V2.6 : choix d'animation d'alerte par macro.
@@ -1474,6 +1480,22 @@ struct Config {
 
 Config config;
 
+// Extension independante : le format EEPROM historique reste strictement intact.
+struct MotionSettings {
+  uint32_t magic;
+  uint8_t mode[MACRO_COUNT];
+  uint16_t cycleMs[MACRO_COUNT];
+  uint32_t checksum;
+};
+const uint32_t MOTION_MAGIC = 0x4D4F5431UL;
+MotionSettings motionSettings;
+uint32_t motionSavedChecksum = 0;
+unsigned long directMotionStartedAt = 0;
+unsigned long liveMotionLastFrameAt = 0;
+int previewMotionMacro = -1;
+bool previewMotionDirect = false;
+
+
 struct BackupHeader {
   uint32_t signature;
   uint32_t configMagic;
@@ -1483,9 +1505,9 @@ struct BackupHeader {
 };
 
 const uint32_t BACKUP_SIGNATURE = 0x4F414952UL;
-const uint16_t BACKUP_VERSION = 1;
+const uint16_t BACKUP_VERSION = 2;
 
-uint8_t configImportBuffer[sizeof(BackupHeader) + sizeof(Config)];
+uint8_t configImportBuffer[sizeof(BackupHeader) + sizeof(Config) + sizeof(MotionSettings)];
 size_t configImportReceived = 0;
 bool configImportAccepted = false;
 bool configImportApplied = false;
@@ -1535,7 +1557,9 @@ enum StartupIndicatorState : uint8_t {
   STARTUP_IND_WIFI,
   STARTUP_IND_MDNS,
   STARTUP_IND_READY,
-  STARTUP_IND_ERROR
+  STARTUP_IND_ERROR,
+  STARTUP_IND_INTRO,
+  STARTUP_IND_FALLBACK
 };
 
 StartupIndicatorState startupIndicatorState = STARTUP_IND_OFF;
@@ -1543,6 +1567,11 @@ bool startupIndicatorVisible = false;
 bool startupSequenceComplete = false;
 unsigned long startupIndicatorLastToggle = 0;
 unsigned long startupReadyStartedAt = 0;
+unsigned long startupStateStartedAt = 0;
+unsigned long startupSessionStartedAt = 0;
+bool startupAPFailed = false;
+bool startupTestActive = false;
+int startupRestoreMacro = -1;
 
 unsigned long lastExternalReconnectAt = 0;
 const unsigned long EXTERNAL_RECONNECT_MS = 30000UL;
@@ -1853,6 +1882,44 @@ void copyV25MacroToV26(const MacroConfigV25& oldM, MacroConfig& newM) {
   strlcpy(newM.logoPath, oldM.logoPath, sizeof(newM.logoPath));
 }
 
+
+void resetMotionSettings() {
+  memset(&motionSettings,0,sizeof(motionSettings));
+  motionSettings.magic=MOTION_MAGIC;
+  for(uint8_t i=0;i<MACRO_COUNT;i++)motionSettings.cycleMs[i]=4000;
+  motionSavedChecksum=0;
+}
+bool validMotionSettings(const MotionSettings& data) {
+  if(data.magic!=MOTION_MAGIC)return false;
+  if(configChecksum(reinterpret_cast<const uint8_t*>(&data),sizeof(data)-sizeof(data.checksum))!=data.checksum)return false;
+  for(uint8_t i=0;i<MACRO_COUNT;i++)if(data.mode[i]>7||data.cycleMs[i]<1000||data.cycleMs[i]>12000)return false;
+  return true;
+}
+bool saveMotionSettings() {
+  motionSettings.checksum=configChecksum(reinterpret_cast<const uint8_t*>(&motionSettings),sizeof(motionSettings)-sizeof(motionSettings.checksum));
+  if(motionSettings.checksum==motionSavedChecksum)return true;
+  File f=LittleFS.open("/motion.tmp","w");
+  if(!f)return false;
+  size_t written=f.write(reinterpret_cast<const uint8_t*>(&motionSettings),sizeof(motionSettings));
+  f.flush();f.close();
+  if(written!=sizeof(motionSettings)||!LittleFS.rename("/motion.tmp","/motion.cfg"))return false;
+  motionSavedChecksum=motionSettings.checksum;
+  return true;
+}
+void loadMotionSettings() {
+  resetMotionSettings();
+  File f=LittleFS.open("/motion.cfg","r");
+  if(!f)return;
+  MotionSettings loaded;
+  bool ok=f.size()==sizeof(loaded)&&f.read(reinterpret_cast<uint8_t*>(&loaded),sizeof(loaded))==sizeof(loaded);
+  f.close();
+  if(ok&&validMotionSettings(loaded)){motionSettings=loaded;motionSavedChecksum=loaded.checksum;}
+}
+void readMotionRequest(uint8_t i) {
+  if(server.hasArg("directMotion"))motionSettings.mode[i]=constrain(server.arg("directMotion").toInt(),0,7);
+  if(server.hasArg("motionCycle"))motionSettings.cycleMs[i]=constrain(server.arg("motionCycle").toInt(),1000,12000);
+}
+
 void loadConfig() {
   EEPROM.begin(EEPROM_SIZE);
 
@@ -1990,7 +2057,7 @@ void loadConfig() {
 
     config.macro[i].intensity = constrain(config.macro[i].intensity, 0, 100);
     config.macro[i].idleIntensity = constrain(config.macro[i].idleIntensity, 0, 100);
-    config.macro[i].alertAnimation = constrain(config.macro[i].alertAnimation, (uint8_t)ALERT_CLASSIC, (uint8_t)ALERT_LOGO_DRAW);
+    config.macro[i].alertAnimation = constrain(config.macro[i].alertAnimation, (uint8_t)ALERT_CLASSIC, (uint8_t)ALERT_RAINBOW);
     config.macro[i].alertDuration = constrain(config.macro[i].alertDuration, 1, 60);
     config.macro[i].blinkMs = constrain(config.macro[i].blinkMs, 100, 2000);
     config.macro[i].alertEndOn = true;
@@ -2132,141 +2199,157 @@ void renderLogoDraw(uint8_t r,
 }
 
 
-void renderStartupIndicatorColor() {
-  switch (startupIndicatorState) {
-    case STARTUP_IND_AP:
-      setRGBLevel(0, 90, 255, 28);
-      break;
+// BEGIN PORTABLE MOTION ENGINE
+// Face vue de face : 0 bas droit -> 11 bas gauche -> 16 haut gauche
+// -> 30 haut droit -> 35 bas droit. Positions normalisees, pas de mm supposes.
+static const uint16_t MOTION_LED_COUNT = 36;
+static const uint32_t BOOT_CINEMA_MS = 4500;
 
-    case STARTUP_IND_WIFI:
-      setRGBLevel(255, 95, 0, 32);
-      break;
-
-    case STARTUP_IND_MDNS:
-      setRGBLevel(170, 0, 255, 30);
-      break;
-
-    case STARTUP_IND_READY:
-      setRGBLevel(0, 255, 45, 35);
-      break;
-
-    case STARTUP_IND_ERROR:
-      setRGBLevel(255, 0, 0, 40);
-      break;
-
-    case STARTUP_IND_OFF:
-    default:
-      ledsOff();
-      break;
+float logoX(uint16_t i) {
+  if (i < 12) return (11.0f-i)/11.0f;
+  if (i < 17) return 0.0f;
+  if (i < 31) return (i-17)/13.0f;
+  return 1.0f;
+}
+float logoY(uint16_t i) {
+  if (i < 12) return 1.0f;
+  if (i < 17) return (17.0f-i)/6.0f;
+  if (i < 31) return 0.0f;
+  return (i-30)/6.0f;
+}
+float motionClamp(float x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+float motionSmooth(float x) { x=motionClamp(x); return x*x*(3-2*x); }
+void motionRGB(uint8_t out[3], uint8_t r, uint8_t g, uint8_t b, float level) {
+  level=motionClamp(level);
+  out[0]=(uint8_t)(r*level+0.0001f);out[1]=(uint8_t)(g*level+0.0001f);out[2]=(uint8_t)(b*level+0.0001f);
+}
+void motionRainbow(float hue, uint8_t out[3], float level) {
+  hue=hue-floorf(hue);float h=hue*6;int sector=(int)h;float f=h-sector;
+  float r=0,g=0,b=0;
+  switch(sector){
+    case 0:r=1;g=f;break;case 1:r=1-f;g=1;break;
+    case 2:g=1;b=f;break;case 3:g=1-f;b=1;break;
+    case 4:r=f;b=1;break;default:r=1;b=1-f;break;
   }
+  motionRGB(out,(uint8_t)(255*r),(uint8_t)(255*g),(uint8_t)(255*b),level);
+}
+// Modes : fixe, respiration, balayage G>D, D>G, comete, aller-retour,
+// arc-en-ciel horizontal, ouverture depuis le centre.
+void renderMotionFrame(uint8_t mode, uint8_t r, uint8_t g, uint8_t b,
+                       uint8_t intensity, uint32_t elapsed, uint32_t cycle,
+                       uint8_t frame[MOTION_LED_COUNT][3]) {
+  if(cycle<500)cycle=500;
+  float p=(elapsed%cycle)/(float)cycle;
+  float peak=(intensity>100?100:intensity)/100.0f;
+  for(uint16_t i=0;i<MOTION_LED_COUNT;i++){
+    float x=logoX(i),level=1;
+    if(mode==1)level=.15f+.85f*(.5f-.5f*cosf(p*6.28318530718f));
+    else if(mode==2||mode==3||mode==5){
+      float pos=mode==5?(.5f-.5f*cosf(p*6.28318530718f)):p;
+      if(mode==3)pos=1-pos;
+      float d=fabsf(x-pos);
+      level=.08f+.92f*motionSmooth(1-d/.30f);
+    }else if(mode==4){
+      float d=fmodf(p*36-i+36,36);level=d<7?1-d/7:.04f;
+    }else if(mode==7){
+      float distance=fabsf(x-.5f)*2;
+      level=.08f+.92f*motionSmooth((p*1.4f-distance)/.28f);
+    }
+    if(mode==6)motionRainbow(x*.8f-p,frame[i],peak);
+    else motionRGB(frame[i],r,g,b,level*peak);
+  }
+}
+// Retour false apres la derniere image. Aucun delay, acces reseau ou flash.
+bool renderBootFrame(uint32_t elapsed,uint8_t frame[MOTION_LED_COUNT][3]) {
+  for(uint16_t i=0;i<MOTION_LED_COUNT;i++)motionRGB(frame[i],0,0,0,0);
+  if(elapsed>=BOOT_CINEMA_MS)return false;
+  for(uint16_t i=0;i<MOTION_LED_COUNT;i++){
+    float x=logoX(i);
+    if(elapsed<1700){
+      float pos=-.45f+1.9f*elapsed/1700.0f;
+      float level=motionSmooth(1-fabsf(x-pos)/.55f)*.7f;
+      motionRainbow(x*.85f-elapsed/2500.0f,frame[i],level);
+    }else if(elapsed<1760)motionRGB(frame[i],255,255,255,.7f);
+    else if(elapsed<1840){}
+    else if(elapsed<2740)motionRGB(frame[i],255,255,255,.65f*motionSmooth((elapsed-1840)/900.0f));
+    else if(elapsed<3650){
+      float distance=fabsf(x-.5f)*2;
+      float wave=motionSmooth(((elapsed-2740)/910.0f*1.35f-distance)/.3f);
+      motionRGB(frame[i],255,(uint8_t)(255*(1-wave)),(uint8_t)(255*(1-wave)),.65f);
+    }else if(elapsed<4100)motionRGB(frame[i],255,0,0,.65f);
+    else motionRGB(frame[i],255,0,0,.65f*(1-motionSmooth((elapsed-4100)/400.0f)));
+  }
+  return true;
+}
+// END PORTABLE MOTION ENGINE
+
+void showMotionFrame(const uint8_t frame[MOTION_LED_COUNT][3]) {
+  for(uint16_t i=0;i<LED_COUNT;i++)setPixelLevel(i,frame[i][0],frame[i][1],frame[i][2],100);
+  pixels.show();
+}
+void renderSpatialMotion(uint8_t mode,uint8_t r,uint8_t g,uint8_t b,uint8_t intensity,unsigned long elapsed,unsigned long cycle) {
+  uint8_t frame[MOTION_LED_COUNT][3];
+  renderMotionFrame(mode,r,g,b,intensity,elapsed,cycle,frame);
+  showMotionFrame(frame);updateLedStatusReference(r,g,b,intensity);
 }
 
 void cancelStartupIndicator() {
-  startupSequenceComplete = true;
-  startupIndicatorState = STARTUP_IND_OFF;
-  startupIndicatorVisible = false;
+  startupSequenceComplete=true;startupIndicatorState=STARTUP_IND_OFF;startupTestActive=false;
 }
-
+// Les evenements reseau ne coupent jamais la cinematrique. L'etat reel est
+// consulte apres celle-ci, meme si le Wi-Fi a deja reussi entre-temps.
 void setStartupIndicatorState(StartupIndicatorState state) {
-  if (!config.startupAnimation || startupSequenceComplete) return;
-  if (startupIndicatorState == state) return;
-
-  startupIndicatorState = state;
-  startupIndicatorVisible = true;
-  startupIndicatorLastToggle = millis();
-
-  if (state == STARTUP_IND_READY) {
-    startupReadyStartedAt = millis();
-  }
-
-  renderStartupIndicatorColor();
-
-  switch (state) {
-    case STARTUP_IND_AP:
-      Serial.println("[STARTUP LED] BLEU = demarrage AP / serveur");
-      break;
-    case STARTUP_IND_WIFI:
-      Serial.println("[STARTUP LED] ORANGE = connexion Wi-Fi externe");
-      break;
-    case STARTUP_IND_MDNS:
-      Serial.println("[STARTUP LED] VIOLET = initialisation mDNS");
-      break;
-    case STARTUP_IND_READY:
-      Serial.println("[STARTUP LED] VERT = pret");
-      break;
-    case STARTUP_IND_ERROR:
-      Serial.println("[STARTUP LED] ROUGE = erreur demarrage");
-      break;
-    default:
-      break;
-  }
+  if(state==STARTUP_IND_ERROR)startupAPFailed=true;
 }
-
+void enterStartupState(StartupIndicatorState state) {
+  startupIndicatorState=state;startupStateStartedAt=millis();
+}
 void updateStartupIndicatorNetworkState() {
-  if (!config.startupAnimation || startupSequenceComplete) return;
-
-  // Une commande utilisateur devient prioritaire sur l'animation de boot.
-  if (alertRunning || settingsPreviewActive || activeMacro >= 0 || outputEnabled) {
-    cancelStartupIndicator();
-    return;
-  }
-
-  if (!config.externalWiFiEnabled || config.knownWiFiCount == 0) {
-    setStartupIndicatorState(STARTUP_IND_READY);
-    return;
-  }
-
-  if (WiFi.status() != WL_CONNECTED) {
-    setStartupIndicatorState(STARTUP_IND_WIFI);
-    return;
-  }
-
-  if (!mdnsStarted) {
-    setStartupIndicatorState(STARTUP_IND_MDNS);
-    return;
-  }
-
-  setStartupIndicatorState(STARTUP_IND_READY);
+  if(startupSequenceComplete)return;
+  if(alertRunning||settingsPreviewActive||activeMacro>=0||outputEnabled)cancelStartupIndicator();
 }
-
+void finishStartupSequence() {
+  int restore=startupTestActive?startupRestoreMacro:-1;
+  cancelStartupIndicator();ledsOff();
+  if(restore>=0&&restore<MACRO_COUNT)applyMacroIdle(restore);
+}
 void updateStartupIndicator() {
-  if (!config.startupAnimation || startupSequenceComplete) return;
-  if (startupIndicatorState == STARTUP_IND_OFF) return;
-
-  unsigned long now = millis();
-
-  if (startupIndicatorState == STARTUP_IND_READY) {
-    // Trois clignotements verts rapides, puis noir.
-    if (now - startupReadyStartedAt >= 1050UL) {
-      startupSequenceComplete = true;
-      startupIndicatorState = STARTUP_IND_OFF;
-      startupIndicatorVisible = false;
-      ledsOff();
-      Serial.println("[STARTUP LED] Termine -> NOIR");
-      return;
-    }
-  }
-
-  unsigned long interval = 350UL;
-
-  switch (startupIndicatorState) {
-    case STARTUP_IND_AP:    interval = 300UL; break;
-    case STARTUP_IND_WIFI:  interval = 450UL; break;
-    case STARTUP_IND_MDNS:  interval = 180UL; break;
-    case STARTUP_IND_READY: interval = 175UL; break;
-    case STARTUP_IND_ERROR: interval = 120UL; break;
-    default: break;
-  }
-
-  if (now - startupIndicatorLastToggle < interval) return;
-
-  startupIndicatorLastToggle = now;
-  startupIndicatorVisible = !startupIndicatorVisible;
-
-  if (startupIndicatorVisible) {
-    renderStartupIndicatorColor();
-  } else {
-    ledsOff();
+  if(startupSequenceComplete||(!config.startupAnimation&&!startupTestActive))return;
+  unsigned long now=millis();
+  if(now-startupIndicatorLastToggle<25UL)return;
+  startupIndicatorLastToggle=now;
+  unsigned long elapsed=now-startupStateStartedAt;
+  uint8_t frame[MOTION_LED_COUNT][3];
+  switch(startupIndicatorState){
+    case STARTUP_IND_INTRO:
+      if(renderBootFrame(elapsed,frame)){showMotionFrame(frame);return;}
+      enterStartupState(STARTUP_IND_AP);return;
+    case STARTUP_IND_AP:
+      renderSpatialMotion(4,40,130,255,30,elapsed,1000);
+      if(elapsed>=900){
+        startupAPFailed=WiFi.softAPIP()!=AP_IP;
+        if(startupAPFailed)enterStartupState(STARTUP_IND_ERROR);
+        else if(config.externalWiFiEnabled&&config.knownWiFiCount>0)enterStartupState(STARTUP_IND_WIFI);
+        else enterStartupState(STARTUP_IND_FALLBACK);
+      }return;
+    case STARTUP_IND_WIFI:
+    case STARTUP_IND_MDNS:
+      if(WiFi.status()==WL_CONNECTED){enterStartupState(STARTUP_IND_READY);return;}
+      if(now-startupSessionStartedAt>=15000UL){enterStartupState(STARTUP_IND_ERROR);return;}
+      renderSpatialMotion(5,255,125,15,28,elapsed,1800);return;
+    case STARTUP_IND_READY:
+      if(elapsed>=1050){finishStartupSequence();return;}
+      if((elapsed/175)%2==0)setRGBLevel(40,255,100,35);else ledsOff();return;
+    case STARTUP_IND_ERROR:
+      if(elapsed>=1500){
+        if(startupAPFailed)finishStartupSequence();else enterStartupState(STARTUP_IND_FALLBACK);
+        return;
+      }
+      if(elapsed%500<150)setRGBLevel(255,startupAPFailed?0:115,0,35);else ledsOff();return;
+    case STARTUP_IND_FALLBACK:
+      if(elapsed>=1600){finishStartupSequence();return;}
+      renderSpatialMotion(1,45,125,255,28,elapsed,800);return;
+    default:finishStartupSequence();return;
   }
 }
 
@@ -2274,7 +2357,8 @@ void renderMacroDirect(uint8_t i) {
   if (i >= MACRO_COUNT) return;
 
   MacroConfig& m = config.macro[i];
-  setRGBLevel(m.r, m.g, m.b, m.intensity);
+  if(!alertRunning&&motionSettings.mode[i])renderSpatialMotion(motionSettings.mode[i],m.r,m.g,m.b,m.intensity,millis()-directMotionStartedAt,motionSettings.cycleMs[i]);
+  else setRGBLevel(m.r, m.g, m.b, m.intensity);
 }
 
 void renderMacroIdle(uint8_t i) {
@@ -2317,6 +2401,7 @@ void applyMacro(uint8_t i) {
 
   activeMacro = i;
   outputEnabled = true;
+  directMotionStartedAt=millis();
 
   renderMacroDirect(i);
 
@@ -2430,6 +2515,7 @@ void finishAlert() {
 
   activeMacro = finishedMacro;
   outputEnabled = true;
+  directMotionStartedAt=millis();
 
   renderMacroDirect(activeMacro);
 
@@ -2567,6 +2653,17 @@ void updateAlert() {
       break;
     }
 
+    case ALERT_SWEEP_LR:
+    case ALERT_SWEEP_RL:
+    case ALERT_BREATHE:
+    case ALERT_IRIS:
+    case ALERT_RAINBOW: {
+      if(now-alertAnimLastFrameAt<33UL)return;
+      alertAnimLastFrameAt=now;
+      uint8_t mode=m.alertAnimation==ALERT_SWEEP_LR?2:m.alertAnimation==ALERT_SWEEP_RL?3:m.alertAnimation==ALERT_BREATHE?1:m.alertAnimation==ALERT_IRIS?7:6;
+      renderSpatialMotion(mode,m.r,m.g,m.b,m.intensity,elapsed,max(1000UL,(unsigned long)m.blinkMs*4UL));
+      alertVisible=true;break;
+    }
     case ALERT_CLASSIC:
     default: {
       // Clignotement constant pendant toute la duree demandee.
@@ -2585,6 +2682,9 @@ void updateAlert() {
 void showMacroPreview(uint8_t i, bool directState) {
   if (i >= MACRO_COUNT || alertRunning) return;
 
+  cancelStartupIndicator();
+  previewMotionMacro=i;previewMotionDirect=directState;
+  directMotionStartedAt=millis();
   settingsPreviewActive = true;
   settingsPreviewUntil = millis() + SETTINGS_PREVIEW_HOLD_MS;
 
@@ -2604,32 +2704,21 @@ void updateSettingsPreview() {
   }
 }
 
-void fadeRGB(uint8_t r1,uint8_t g1,uint8_t b1,uint8_t r2,uint8_t g2,uint8_t b2,uint16_t durationMs) {
-  const int steps = 30;
-  for (int i = 0; i <= steps; i++) {
-    float t = (float)i / (float)steps;
-    uint8_t r = r1 + (r2-r1)*t;
-    uint8_t g = g1 + (g2-g1)*t;
-    uint8_t b = b1 + (b2-b1)*t;
-    setRGBLevel(r,g,b,20);
-    delay(durationMs / steps);
-    yield();
-  }
+void updateDirectMotion() {
+  if(alertRunning||!startupSequenceComplete)return;
+  int i=settingsPreviewActive&&previewMotionDirect?previewMotionMacro:outputEnabled&&!settingsPreviewActive?activeMacro:-1;
+  if(i<0||i>=MACRO_COUNT||motionSettings.mode[i]==0)return;
+  unsigned long now=millis();if(now-liveMotionLastFrameAt<33UL)return;
+  liveMotionLastFrameAt=now;
+  renderMacroDirect(i);
 }
 
 void startupAnimation() {
-  if (!config.startupAnimation) return;
-  fadeRGB(0,0,0,255,0,0,150);
-  fadeRGB(255,0,0,255,255,0,150);
-  fadeRGB(255,255,0,0,255,0,150);
-  fadeRGB(0,255,0,0,255,255,150);
-  fadeRGB(0,255,255,0,0,255,150);
-  fadeRGB(0,0,255,255,0,255,150);
-  fadeRGB(255,0,255,0,0,0,150);
-  for (int i=0;i<3;i++) {
-    setRGBLevel(255,255,255,20); delay(55);
-    ledsOff(); delay(55);
-  }
+  startupRestoreMacro=startupTestActive?activeMacro:-1;
+  settingsPreviewActive=false;activeMacro=-1;outputEnabled=false;
+  startupSequenceComplete=false;startupAPFailed=false;
+  startupSessionStartedAt=millis();startupIndicatorLastToggle=0;
+  enterStartupState(STARTUP_IND_INTRO);
 }
 
 String mimeTypeForPath(String path) {
@@ -2647,6 +2736,18 @@ static const char COMMON_CSS[] PROGMEM = R"CSS(
 button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:24px;min-height:46px;padding:11px 15px;font-size:14px;font-weight:550;cursor:pointer;transition:background .15s,opacity .15s,transform .12s}button svg{width:18px;height:18px;stroke-width:1.7;flex-shrink:0}button:active{transform:scale(.97)}button:disabled{cursor:not-allowed;opacity:.42;transform:none}.direct{background:var(--wash,#eceef5);color:#30313b}.direct svg{color:var(--channel,#777b88)}.direct.active svg{color:inherit}.alert{background:#fff0d7;color:#9a610c}.alert.active{background:#eab759;color:#3e2b06}.direct:hover:not(:disabled),.alert:hover:not(:disabled){filter:brightness(.97)}.transport{position:fixed;bottom:0;left:0;right:0;z-index:30;padding:14px 24px max(18px,env(safe-area-inset-bottom));background:linear-gradient(0deg,#f3f4f8 20%,#f3f4f8eb 75%,#f3f4f800)}.transport-inner{width:min(872px,100%);margin:auto;display:flex;justify-content:center}.blackout{width:100%;min-height:52px;border-radius:28px;background:#22232a;color:#fff;box-shadow:0 6px 18px #25283612;font-size:14px;font-weight:600;letter-spacing:.04em}.blackout svg{width:18px;height:18px}.feedback{font-size:12px;line-height:1.5;color:#9a4b13;padding:12px 2px 0}.feedback:empty{display:none}
 .section{padding:22px;border:0;background:var(--panel);border-radius:var(--radius);margin-bottom:14px;overflow:hidden;box-shadow:0 3px 18px #28315a04}.section h2{font-size:21px;font-weight:600;letter-spacing:-.6px;margin:0 0 12px}.section h3{font-size:16px;font-weight:600;letter-spacing:-.3px}.section>p,.small{font-size:12px;color:var(--muted);line-height:1.65;overflow-wrap:anywhere}.section label{display:block;font-size:13px;font-weight:500;color:#666b78;margin:18px 0 7px}.section input,.section select{width:100%;min-width:0;min-height:48px;padding:12px 14px;background:#f4f5f9;color:var(--text);border:1px solid transparent;border-radius:14px;font-size:16px}.section input[type=checkbox]{width:20px!important;min-height:20px;height:20px;vertical-align:middle;accent-color:#4982e8}.section input[type=color]{height:50px;padding:5px;cursor:pointer}.section input[type=range]{padding:0;min-height:44px;accent-color:#4982e8;border:0;background:transparent}.section input[type=file]{font-size:12px;padding:9px;max-width:100%}.section input::file-selector-button{border:0;border-radius:9px;padding:7px 10px;background:#e6e9f2;color:#333945;margin-right:8px}.grid2,.testrow{display:grid;grid-template-columns:1fr 1fr;gap:14px}.testrow{margin-top:16px}.save{display:flex;width:100%;margin-top:16px;min-height:46px;border:0;border-radius:24px;background:#3478e5;color:#fff;font-size:13px;font-weight:550;text-decoration:none}.danger{width:100%;background:#fff0f0;color:#b3434a;margin-top:10px;font-size:13px}.filebox{padding:16px;border:0;border-radius:18px;background:#f5f6fa}.wifilist{display:flex;flex-direction:column;gap:8px}.wifirow{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:64px;padding:13px;background:#f5f6fa;border:0;border-radius:18px;text-align:left;color:var(--text)}.wifiname{font-weight:550;font-size:15px;overflow-wrap:anywhere}.wifimeta{font-size:11px;color:var(--muted);line-height:1.6;white-space:normal}.settings-intro{margin:0 0 20px}.settings-intro h1{font-size:29px;font-weight:650;letter-spacing:-1px;margin:0}.settings-intro p,.eyebrow{display:none}.jumpnav{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 22px}.jumpnav a{display:flex;align-items:center;min-height:40px;padding:9px 14px;border:0;border-radius:22px;background:#e6eaf4;color:#4e6184;font-size:12px;text-decoration:none}.section summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:28px;font-size:16px;font-weight:550;cursor:pointer;list-style:none}.section summary::-webkit-details-marker{display:none}.section summary:after{content:'›';font-size:24px;color:#a1a6b0;font-weight:400;transform:rotate(0)}.section[open]>summary{margin-bottom:16px}.section[open]>summary:after{transform:rotate(90deg)}.section[id]{scroll-margin-top:80px}.settings-macros a{text-decoration:none}.settings-macros .logo{width:40px!important;height:40px!important}.autosave{font-size:12px;color:#447b5b;background:#f0f8f2;border:0;border-radius:12px;padding:10px 12px;margin-bottom:18px}.fieldgroup{margin-top:18px;padding-top:4px;border-top:1px solid var(--line)}.fieldgroup h3{margin:14px 0 6px}.fieldgroup>p{display:none}.password-wrap{position:relative}.password-wrap input{padding-right:78px}.password-toggle{position:absolute;right:4px;top:4px;min-height:40px;padding:5px 9px;border-radius:11px;background:#e9ecf4;color:#506384;font-size:11px}.macro-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55vw}
 @media(max-width:600px){.top{padding:12px 20px;min-height:64px}.control-top{padding:28px 22px 22px}.control-top .title{font-size:28px}.control .wrap{padding:0 20px 110px}.macro-grid{grid-template-columns:1fr;gap:13px}.macrohead{padding:15px 17px 12px}.logo,.nologo{width:46px;height:46px}.mname h2{font-size:19px}.actions{padding:0 16px 15px;gap:10px}.actions button{min-height:44px;padding:9px 12px;font-size:14px}.wrap{padding:16px 20px 30px}.section{padding:18px}.grid2{grid-template-columns:1fr}.iconbtn{font-size:13px}.transport{padding-left:20px;padding-right:20px}.settings-button{width:44px;height:44px}.title{font-size:16px}}
+
+.theme-choice{display:flex;gap:6px;padding:5px;border-radius:26px;background:#e9ecf4}.theme-choice button{flex:1;min-height:42px;background:transparent;color:var(--muted)}.theme-choice button[aria-pressed=true]{background:var(--panel);color:var(--text);box-shadow:0 2px 8px #0000000c}
+[data-theme=dark]{color-scheme:dark;--bg:#101116;--panel:#1b1e26;--text:#f0f1f6;--muted:#a0a6b5;--line:#323641;--amber:#f2bd70;--green:#82cba0}
+[data-theme=dark] .control{background:radial-gradient(ellipse at 100% 0%,#1c2540 0%,transparent 48%),radial-gradient(ellipse at 0% 90%,#291e2b 0%,transparent 44%),#101116;background-attachment:fixed}
+[data-theme=dark] .top{background:#101116e8}[data-theme=dark] .control-top{background:transparent}
+[data-theme=dark] .iconbtn{background:#272b35;color:#b9cbee}[data-theme=dark] .settings-button{color:#cdd4e4}
+[data-theme=dark] .card{background:#1d2029e8;border-color:#ffffff08;box-shadow:0 6px 24px #00000018}[data-theme=dark] .card[data-active=true]{background:#20232d;border-color:var(--channel)}[data-theme=dark] .card[data-alert=true]{background:#29251f;border-color:#d1a052}
+[data-theme=dark] .direct{background:var(--wash,#2a2e39);color:#e3e7f1}[data-theme=dark] .alert{background:#3b3020;color:#efbe78}[data-theme=dark] .alert.active{background:#dbad61;color:#241b10}
+[data-theme=dark] .transport{background:linear-gradient(0deg,#101116 20%,#101116eb 75%,#10111600)}[data-theme=dark] .blackout{background:#e9edf5;color:#1b1d25;box-shadow:0 6px 22px #00000030}
+[data-theme=dark] .section input,[data-theme=dark] .section select,[data-theme=dark] .filebox,[data-theme=dark] .wifirow{background:#252934;color:var(--text)}[data-theme=dark] .section label{color:#b8bfcd}[data-theme=dark] .wifimeta{color:var(--muted)}[data-theme=dark] .jumpnav a,[data-theme=dark] .password-toggle,[data-theme=dark] .theme-choice{background:#262c3b;color:#bdcbe4}
+[data-theme=dark] .danger{background:#38232b;color:#f3b2b7}[data-theme=dark] .autosave{background:#20312a;color:#8ac9a2}[data-theme=dark] .feedback{color:#edbe80}[data-theme=dark] .connection[data-state=online]{color:#8cbd9e}[data-theme=dark] .connection[data-state=offline]{color:#e2b679}
+
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition:none!important;animation:none!important}}
 )CSS";
 
@@ -2763,7 +2864,7 @@ void sendControlPage() {
   chunk +=
     "</title>"
     "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>"
-    "<link rel='stylesheet' href='/style.css?v=311'>"
+    "<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=320'>"
     "</head><body class='control' data-mode='unknown'>"
     "<header class='top control-top'><div><h1 class='title'>";
   chunk += htmlEscape(config.deviceName);
@@ -3056,6 +3157,8 @@ function params(){
   q.set('name',document.getElementById('macroName').value);
   q.set('directColor',document.getElementById('directColor').value);
   q.set('directIntensity',document.getElementById('directIntensity').value);
+  q.set('directMotion',document.getElementById('directMotion').value);
+  q.set('motionCycle',document.getElementById('motionCycle').value);
   q.set('idleOff',document.getElementById('idleOff').checked?'1':'0');
   q.set('idleColor',document.getElementById('idleColor').value);
   q.set('idleIntensity',document.getElementById('idleIntensity').value);
@@ -3069,7 +3172,7 @@ function params(){
 function saveState(text,color){
   const e=document.getElementById('autosave');
   e.textContent=text;
-  e.style.color=color;
+  e.style.color=document.documentElement.dataset.theme==='dark'?(color==='#26754a'?'#8ac9a2':color==='#b43d45'?'#f3b2b7':'#edbe80'):color;
 }
 
 function scheduleSave(){
@@ -3137,7 +3240,12 @@ function updateAnimationHelp(){
     'DIRECT / HORS DIRECT accelere progressivement sur toute la duree.',
     'Deux flashs courts suivis d une pause, repetes pendant la duree.',
     'Un point lumineux avec une queue fait le tour des 36 LED du logo.',
-    'Le contour du logo se dessine LED par LED puis recommence.'
+    'Le contour du logo se dessine LED par LED puis recommence.',
+    'Le faisceau traverse le logo de gauche à droite.',
+    'Le faisceau traverse le logo de droite à gauche.',
+    'Le logo respire, sans dépasser son intensité réglée.',
+    'La lumière s’ouvre depuis le centre du logo.',
+    'Un arc-en-ciel traverse les côtés du logo.'
   ];
 
   e.textContent=txt[v]||txt[0];
@@ -3200,6 +3308,7 @@ void endChunkedHtml() {
 
 static const char UI_ENHANCEMENT_JS[] PROGMEM = R"UIJS(
 <script>
+document.querySelectorAll('[data-theme-choice]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.themeChoice===document.documentElement.dataset.theme)));
 function revealSection(){const id=location.hash.slice(1),node=document.getElementById(id);if(node&&node.tagName==='DETAILS')node.open=true;}
 window.addEventListener('hashchange',revealSection);revealSection();
 document.querySelectorAll('label').forEach((label,i)=>{if(label.querySelector('input')||label.htmlFor)return;const field=label.nextElementSibling;if(field&&/^(INPUT|SELECT)$/.test(field.tagName)){if(!field.id)field.id='field-'+i;label.htmlFor=field.id;}});
@@ -3224,7 +3333,7 @@ void sendSettingsPage() {
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>Réglages · ON AIR</title>"
     "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>"
-    "<link rel='stylesheet' href='/style.css?v=311'>"
+    "<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=320'>"
     "</head><body>"
     "<header class='top'><div class='title'>Réglages</div>"
     "<a class='iconbtn' href='/'>← Console</a></header>"
@@ -3236,6 +3345,9 @@ void sendSettingsPage() {
     ;
   sendHtmlChunk(c);
   c = "";
+  sendHtmlChunk("<section class='section'><h2>Apparence</h2><div class='theme-choice' role='group' aria-label='Thème'>"
+    "<button type='button' data-theme-choice='light' onclick=\"setTheme('light')\" aria-pressed='false'>☀ Clair</button>"
+    "<button type='button' data-theme-choice='dark' onclick=\"setTheme('dark')\" aria-pressed='false'>☾ Sombre</button></div></section>");
   sendHtmlChunk(
     "<section id='macros' class='section settings-macros'><h2>Vos émissions</h2>"
     "<div class='small' style='margin-bottom:12px'>"
@@ -3300,7 +3412,7 @@ void sendSettingsPage() {
 
   if (config.startupAnimation) c += " checked";
 
-  c += "> Indicateur couleur des etapes de demarrage</label>";
+  c += "> Cinématique et indications Wi-Fi au démarrage</label>";
   c += "<button class='save' type='submit'>ENREGISTRER LE BOÎTIER</button>";
   c += "<div class='small' style='margin-top:10px'>Changer le SSID ou le mot de passe redemarre l ESP.</div>";
   c += "</details></form>";
@@ -3457,7 +3569,7 @@ void sendMacroSettingsPage(uint8_t i) {
   c += String(i + 1);
   c += "</title>";
   c += "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>";
-  c += "<link rel='stylesheet' href='/style.css?v=311'></head><body>";
+  c += "<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=320'></head><body>";
   c += "<header class='top'><div class='title macro-title'>Émission ";
   c += String(i + 1);
   c += " — ";
@@ -3491,7 +3603,23 @@ void sendMacroSettingsPage(uint8_t i) {
   c += "%</span></label><input id='directIntensity' type='range' min='0' max='100' value='";
   c += String(m.intensity);
   c += "' oninput=\"document.getElementById('directIv').textContent=this.value+'%';preview('direct');scheduleSave()\" onchange='saveNow()'></div>";
-  c += "</div></section>";
+  c += "</div><label for='directMotion'>Animation en direct</label><select id='directMotion' onchange=\"preview('direct');saveNow()\">";
+  c += "<option value='0'";if(motionSettings.mode[i]==0)c += " selected";c += ">Fixe</option>";
+  c += "<option value='1'";if(motionSettings.mode[i]==1)c += " selected";c += ">Respiration</option>";
+  c += "<option value='2'";if(motionSettings.mode[i]==2)c += " selected";c += ">Balayage gauche → droite</option>";
+  c += "<option value='3'";if(motionSettings.mode[i]==3)c += " selected";c += ">Balayage droite → gauche</option>";
+  c += "<option value='4'";if(motionSettings.mode[i]==4)c += " selected";c += ">Comète autour du logo</option>";
+  c += "<option value='5'";if(motionSettings.mode[i]==5)c += " selected";c += ">Balayage aller-retour</option>";
+  c += "<option value='6'";if(motionSettings.mode[i]==6)c += " selected";c += ">Arc-en-ciel</option>";
+  c += "<option value='7'";if(motionSettings.mode[i]==7)c += " selected";c += ">Ouverture depuis le centre</option>";
+  c += "</select><label for='motionCycle'>Durée d’un cycle</label><select id='motionCycle' onchange=\"preview('direct');saveNow()\">";
+  const uint16_t cycles[]={1000,2000,3000,4000,6000,8000,12000};
+  for(uint8_t n=0;n<7;n++){
+    c += "<option value='";c += String(cycles[n]);c += "'";
+    if(motionSettings.cycleMs[i]==cycles[n])c += " selected";
+    c += ">";c += String(cycles[n]/1000);c += " s</option>";
+  }
+  c += "</select></section>";
 
   sendHtmlChunk(c);
   c = "";
@@ -3550,7 +3678,13 @@ void sendMacroSettingsPage(uint8_t i) {
 
   c += "<option value='6'";
   if (m.alertAnimation == ALERT_LOGO_DRAW) c += " selected";
-  c += ">Logo : dessin progressif du contour</option></select>";
+  c += ">Logo : dessin progressif du contour</option>";
+  c += "<option value='7'";if(m.alertAnimation==7)c += " selected";c += ">Balayage gauche → droite</option>";
+  c += "<option value='8'";if(m.alertAnimation==8)c += " selected";c += ">Balayage droite → gauche</option>";
+  c += "<option value='9'";if(m.alertAnimation==9)c += " selected";c += ">Respiration</option>";
+  c += "<option value='10'";if(m.alertAnimation==10)c += " selected";c += ">Ouverture depuis le centre</option>";
+  c += "<option value='11'";if(m.alertAnimation==11)c += " selected";c += ">Arc-en-ciel horizontal</option>";
+  c += "</select>";
 
   c += "<div id='animationHelp' class='small' style='margin-top:7px'></div>";
   c += "<div class='grid2'><div><label>Durée de l’alerte</label>";
@@ -4198,7 +4332,7 @@ bool readMacroRequest(uint8_t& idx,
   idleIntensity = constrain(server.arg("idleIntensity").toInt(), 0, 100);
   idleOff = server.arg("idleOff") == "1";
 
-  alertAnimation = constrain(server.arg("alertAnimation").toInt(), (int)ALERT_CLASSIC, (int)ALERT_LOGO_DRAW);
+  alertAnimation = constrain(server.arg("alertAnimation").toInt(), (int)ALERT_CLASSIC, (int)ALERT_RAINBOW);
   alertDuration = constrain(server.arg("alertDuration").toInt(), 1, 60);
   blinkMs = constrain(server.arg("blinkMs").toInt(), 100, 2000);
 
@@ -4239,6 +4373,7 @@ void updateMacroFromRequest(uint8_t idx,
   m.alertDuration = alertDuration;
   m.blinkMs = blinkMs;
   m.alertEndOn = true;
+  readMotionRequest(idx);
 }
 
 void handleMacroAutoSave() {
@@ -4289,6 +4424,9 @@ void handleMacroAutoSave() {
     blinkMs
   );
 
+  if(!saveMotionSettings()){
+    server.send(500,"application/json","{\"ok\":false,\"reason\":\"motion storage\"}");return;
+  }
   saveConfig();
 
   // Si c'est la macro courante, applique son nouvel etat sans attendre.
@@ -4461,23 +4599,21 @@ void handleLogo() {
 }
 
 void handleStartupTest() {
+  if(outputEnabled||alertRunning){server.send(409,"application/json","{\"ok\":false,\"reason\":\"live\"}");return;}
   server.send(200,"application/json","{\"ok\":true}");
-  delay(50);
-  bool prevEnabled = outputEnabled;
-  int prevMacro = activeMacro;
-  alertRunning = false;
-  startupAnimation();
-  if (prevMacro >= 0 && prevMacro < MACRO_COUNT) {
-    if (prevEnabled) applyMacro(prevMacro);
-    else applyMacroIdle(prevMacro);
-  } else {
-    blackout();
-  }
+  startupTestActive=true;startupAnimation();
 }
 
 void handleReboot() { server.send(200,"text/plain","Redemarrage"); delay(800); ESP.restart(); }
 
 void handleFactoryReset() {
+  MotionSettings previousMotion=motionSettings;
+  uint32_t previousChecksum=motionSavedChecksum;
+  resetMotionSettings();
+  if(!saveMotionSettings()){
+    motionSettings=previousMotion;motionSavedChecksum=previousChecksum;
+    server.send(500,"text/plain","Impossible de reinitialiser les animations");return;
+  }
   setDefaults();
   saveConfig();
   for (uint8_t i=0;i<MACRO_COUNT;i++) {
@@ -4502,117 +4638,54 @@ uint32_t configChecksum(const uint8_t* data, size_t len) {
 }
 
 void handleConfigExport() {
-  BackupHeader header;
-
-  header.signature = BACKUP_SIGNATURE;
-  header.configMagic = CONFIG_MAGIC;
-  header.configSize = sizeof(Config);
-  header.backupVersion = BACKUP_VERSION;
-  header.checksum = configChecksum(
-    reinterpret_cast<const uint8_t*>(&config),
-    sizeof(Config)
-  );
-
-  size_t totalSize = sizeof(BackupHeader) + sizeof(Config);
-
-  server.sendHeader(
-    "Content-Disposition",
-    "attachment; filename=\"ON_AIR-MOC_backup.cfg\""
-  );
-  server.sendHeader("Cache-Control", "no-store");
-  server.setContentLength(totalSize);
-  server.send(200, "application/octet-stream", "");
-
-  WiFiClient client = server.client();
-
-  client.write(
-    reinterpret_cast<const uint8_t*>(&header),
-    sizeof(header)
-  );
-
-  client.write(
-    reinterpret_cast<const uint8_t*>(&config),
-    sizeof(Config)
-  );
-
-  Serial.println("[BACKUP] Configuration exportee");
+  // V2 : EEPROM historique + extension animations. V1 reste importable.
+  motionSettings.checksum=configChecksum(reinterpret_cast<const uint8_t*>(&motionSettings),sizeof(motionSettings)-sizeof(motionSettings.checksum));
+  const size_t payloadSize=sizeof(Config)+sizeof(MotionSettings);
+  uint8_t* payload=configImportBuffer+sizeof(BackupHeader);
+  memcpy(payload,&config,sizeof(Config));
+  memcpy(payload+sizeof(Config),&motionSettings,sizeof(MotionSettings));
+  BackupHeader header={};
+  header.signature=BACKUP_SIGNATURE;header.configMagic=CONFIG_MAGIC;
+  header.configSize=payloadSize;header.backupVersion=BACKUP_VERSION;
+  header.checksum=configChecksum(payload,payloadSize);
+  server.sendHeader("Content-Disposition","attachment; filename=\"ON_AIR-MOC_backup.cfg\"");
+  server.sendHeader("Cache-Control","no-store");
+  server.setContentLength(sizeof(header)+payloadSize);
+  server.send(200,"application/octet-stream","");
+  WiFiClient client=server.client();
+  client.write(reinterpret_cast<const uint8_t*>(&header),sizeof(header));
+  client.write(payload,payloadSize);
 }
 
 void handleConfigImportData() {
-  HTTPUpload& upload = server.upload();
-
-  if (upload.status == UPLOAD_FILE_START) {
-    configImportReceived = 0;
-    configImportAccepted = true;
-    configImportApplied = false;
-    Serial.println("[BACKUP] Import demarre");
-  }
-  else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (!configImportAccepted) return;
-
-    if (configImportReceived + upload.currentSize > sizeof(configImportBuffer)) {
-      configImportAccepted = false;
-      return;
-    }
-
-    memcpy(
-      configImportBuffer + configImportReceived,
-      upload.buf,
-      upload.currentSize
-    );
-
-    configImportReceived += upload.currentSize;
-  }
-  else if (upload.status == UPLOAD_FILE_END) {
-    if (!configImportAccepted) return;
-
-    size_t expected = sizeof(BackupHeader) + sizeof(Config);
-
-    if (configImportReceived != expected) {
-      configImportAccepted = false;
-      return;
-    }
-
-    BackupHeader header;
-    memcpy(&header, configImportBuffer, sizeof(header));
-
-    if (header.signature != BACKUP_SIGNATURE ||
-        header.configMagic != CONFIG_MAGIC ||
-        header.configSize != sizeof(Config) ||
-        header.backupVersion != BACKUP_VERSION) {
-
-      configImportAccepted = false;
-      return;
-    }
-
-    Config restored;
-    memcpy(
-      &restored,
-      configImportBuffer + sizeof(BackupHeader),
-      sizeof(Config)
-    );
-
-    uint32_t checksum = configChecksum(
-      reinterpret_cast<const uint8_t*>(&restored),
-      sizeof(Config)
-    );
-
-    if (checksum != header.checksum ||
-        restored.magic != CONFIG_MAGIC) {
-
-      configImportAccepted = false;
-      return;
-    }
-
-    config = restored;
-    saveConfig();
-    configImportApplied = true;
-
-    Serial.println("[BACKUP] Configuration restauree");
-  }
-  else if (upload.status == UPLOAD_FILE_ABORTED) {
-    configImportAccepted = false;
-  }
+  HTTPUpload& upload=server.upload();
+  if(upload.status==UPLOAD_FILE_START){
+    configImportReceived=0;configImportAccepted=true;configImportApplied=false;
+  }else if(upload.status==UPLOAD_FILE_WRITE){
+    if(!configImportAccepted)return;
+    if(configImportReceived+upload.currentSize>sizeof(configImportBuffer)){configImportAccepted=false;return;}
+    memcpy(configImportBuffer+configImportReceived,upload.buf,upload.currentSize);
+    configImportReceived+=upload.currentSize;
+  }else if(upload.status==UPLOAD_FILE_END){
+    if(!configImportAccepted||configImportReceived<sizeof(BackupHeader)){configImportAccepted=false;return;}
+    BackupHeader header;memcpy(&header,configImportBuffer,sizeof(header));
+    bool legacy=header.backupVersion==1&&header.configSize==sizeof(Config);
+    bool extended=header.backupVersion==BACKUP_VERSION&&header.configSize==sizeof(Config)+sizeof(MotionSettings);
+    const uint8_t* payload=configImportBuffer+sizeof(BackupHeader);
+    if((!legacy&&!extended)||header.signature!=BACKUP_SIGNATURE||header.configMagic!=CONFIG_MAGIC||
+       configImportReceived!=sizeof(header)+header.configSize||
+       configChecksum(payload,header.configSize)!=header.checksum){configImportAccepted=false;return;}
+    Config restored;memcpy(&restored,payload,sizeof(restored));
+    if(restored.magic!=CONFIG_MAGIC){configImportAccepted=false;return;}
+    MotionSettings previous=motionSettings;
+    if(extended){
+      MotionSettings restoredMotion;memcpy(&restoredMotion,payload+sizeof(Config),sizeof(restoredMotion));
+      if(!validMotionSettings(restoredMotion)){configImportAccepted=false;return;}
+      motionSettings=restoredMotion;
+    }else resetMotionSettings();
+    if(!saveMotionSettings()){motionSettings=previous;configImportAccepted=false;return;}
+    config=restored;saveConfig();configImportApplied=true;
+  }else if(upload.status==UPLOAD_FILE_ABORTED)configImportAccepted=false;
 }
 
 void handleConfigImportComplete() {
@@ -4673,7 +4746,7 @@ void sendDiagnosticsPage() {
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>Diagnostic</title>"
     "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>"
-    "<link rel='stylesheet' href='/style.css?v=311'></head><body>"
+    "<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=320'></head><body>"
     "<header class='top'><div class='title'>Diagnostic</div>"
     "<a class='iconbtn' href='/settings#system'>← Système</a></header>"
     "<div class='wrap'>"
@@ -4769,7 +4842,7 @@ void sendDiagnosticsPage() {
 static const char FIRMWARE_PAGE[] PROGMEM = R"FWPAGE(
 <!doctype html><html lang='fr'><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Mise à jour · ON AIR</title><link rel='stylesheet' href='/style.css?v=311'>
+<title>Mise à jour · ON AIR</title><script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=320'>
 </head><body><header class='top'><div class='title'>Mise à jour</div><a class='iconbtn' href='/settings#system'>← Système</a></header>
 <main class='wrap'><div class='settings-intro'><span class='eyebrow'>Maintenance</span><h1>Mise à jour</h1><p>Installez une nouvelle version en quelques instants.</p></div>
 <section class='section'><h2>Installer un firmware</h2><p>Choisissez le fichier ON_AIR_ESP8266_OTA.bin. Vos émissions, logos et connexions sont conservés lors d’une mise à jour compatible.</p>
@@ -5271,11 +5344,11 @@ void setup() {
   else Serial.println("[FS] LittleFS OK");
 
   loadConfig();
+  loadMotionSettings();
 
   // Etat initial propre, puis indicateur de progression sans ralentir le boot.
   blackout();
-  startupSequenceComplete = false;
-  setStartupIndicatorState(STARTUP_IND_AP);
+  if(config.startupAnimation)startupAnimation();
 
   // Le Wi-Fi apparait immediatement au demarrage.
   startAccessPoint();
@@ -5309,6 +5382,7 @@ void loop() {
 
   updateAlert();
   updateSettingsPreview();
+  updateDirectMotion();
   updateWiFiScan();
   applyPendingExternalWiFi();
 
