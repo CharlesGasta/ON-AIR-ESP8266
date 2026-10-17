@@ -22,6 +22,7 @@ jobs:
       - name: Test motion engine and configuration compatibility
         run: |
           git fetch --depth=1 origin efefbef61bba26bd57feaf1d220a7d36801d6897
+          git fetch --depth=1 origin 9fd36bbb627346f8e6a70c49339bc49a015df8f1
           python3 tools/check-firmware.py
           python3 tools/check-motion.py
 

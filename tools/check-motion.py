@@ -8,7 +8,7 @@ import re,shutil,subprocess,tempfile
 root=Path(__file__).resolve().parents[1]
 s=(root/'ON_AIR_ESP8266.ino').read_text(encoding='utf-8')
 def function(name):
-    m=re.search(r'^(?:void|bool|uint32_t) '+name+r'\([^;]*?\)\s*\{',s,re.M)
+    m=re.search(r'^(?:void|bool|uint32_t|uint16_t) '+name+r'\([^;]*?\)\s*\{',s,re.M)
     assert m,name
     i=m.end();level=1;quoted=False;escape=False
     while level:
@@ -27,6 +27,7 @@ types=s[s.index('const uint32_t CONFIG_MAGIC'):s.index('ESP8266WebServer server'
 enum=re.search(r'enum StartupIndicatorState[^}]+};',s).group()
 prefix=r'''
 #include <stdint.h>
+#include <cstdio>
 #include <stddef.h>
 #include <math.h>
 #include <cstring>
@@ -39,6 +40,7 @@ prefix=r'''
 using std::size_t;
 '''
 stubs=r'''
+static uint8_t customData[1356];static int customOwner=-1;static bool customValid=false,customPreview=false;
 uint32_t clockMs=0;uint32_t millis(){return clockMs;}
 int activeMacro=-1,alertMacro=-1;
 bool outputEnabled=false,alertRunning=false,settingsPreviewActive=false,alertTestMode=false;
@@ -84,7 +86,7 @@ struct {
 } server;
 int configWrites=0;void saveConfig(){configWrites++;}
 '''
-functions='\n'.join(function(n) for n in ['configChecksum','resetMotionSettings','validMotionSettings','saveMotionSettings','loadMotionSettings','showMotionFrame','renderSpatialMotion','cancelStartupIndicator','setStartupIndicatorState','enterStartupState','updateStartupIndicatorNetworkState','finishStartupSequence','updateStartupIndicator','renderMacroDirect','updateDirectMotion','startupAnimation','blackout','handleConfigExport','handleConfigImportData'])
+functions='\n'.join(function(n) for n in ['configChecksum','resetMotionSettings','validMotionSettings','saveMotionSettings','loadMotionSettings','showMotionFrame','renderSpatialMotion','cancelStartupIndicator','setStartupIndicatorState','enterStartupState','updateStartupIndicatorNetworkState','finishStartupSequence','updateStartupIndicator','customWord','validCustom','loadCustom','renderCustomOutput','renderMacroDirect','updateDirectMotion','startupAnimation','blackout','handleConfigExport','handleConfigImportData'])
 tests=r'''
 void applyMacroIdle(uint8_t i){cancelStartupIndicator();activeMacro=i;outputEnabled=false;ledsOff();}
 void tick(uint32_t ms){clockMs=ms;updateStartupIndicatorNetworkState();updateStartupIndicator();}
@@ -110,7 +112,7 @@ int main(){
  for(int i=17;i<31;i++){assert(logoY(i)==0);if(i>17)assert(logoX(i)>logoX(i-1));}
  for(int i=31;i<36;i++){assert(logoX(i)==1);if(i>31)assert(logoY(i)>logoY(i-1));}
  uint8_t frame[36][3];
- for(int mode=0;mode<8;mode++)for(int peak: {0,15,60,100})for(uint32_t ms=0;ms<12000;ms+=33){
+ for(int mode=0;mode<10;mode++)for(int peak: {0,15,60,100})for(uint32_t ms=0;ms<12000;ms+=33){
   renderMotionFrame(mode,255,130,70,peak,ms,4000,frame);
   for(auto& pixel:frame)for(auto value:pixel)assert(value<=255*peak/100+1);
  }
@@ -122,6 +124,24 @@ int main(){
  assert(renderBootFrame(1720,frame)&&frame[0][0]>170&&frame[0][0]==frame[0][1]);
  renderBootFrame(3900,frame);for(auto& pixel:frame)assert(pixel[0]>160&&pixel[1]==0&&pixel[2]==0);
  assert(!renderBootFrame(4500,frame));for(auto& p:frame)for(auto c:p)assert(c==0);
+
+ for(int mode: {2,3,5,7,8,9})for(uint32_t ms=0;ms<4000;ms+=31){
+  renderMotionFrame(mode,255,255,255,100,ms,4000,frame,true);
+  for(int led=0;led<36;led++){bool side=(led>=12&&led<17)||led>=31;
+   if((mode<8&&side)||(mode>=8&&!side))for(auto c:frame[led])assert(c==0);
+  }
+ }
+ renderMotionFrame(8,255,0,0,100,400,4000,frame,true);assert(frame[16][0]>frame[12][0]);
+ renderMotionFrame(9,255,0,0,100,400,4000,frame,true);assert(frame[12][0]>frame[16][0]);
+ memset(customData,0,sizeof(customData));memcpy(customData,"CUE1",4);customData[4]=1;customData[5]=2;
+ customData[8]=232;customData[9]=3;customData[12]=200;
+ customData[120]=232;customData[121]=3;customData[122]=232;customData[123]=3;customData[125]=200;
+ uint32_t crc=configChecksum(customData,1352);memcpy(customData+1352,&crc,4);assert(validCustom(customData));
+ files["/custom0.bin"]=std::vector<uint8_t>(customData,customData+1356);customOwner=-1;
+ config.macro[0].intensity=100;renderCustomOutput(0,0);assert(displayed[0][0]==200&&displayed[0][1]==0);
+ renderCustomOutput(0,1500);assert(displayed[0][0]==100&&displayed[0][1]==100);
+ renderCustomOutput(0,2200);assert(displayed[0][0]==0&&displayed[0][1]==200);
+ customData[20]^=1;assert(!validCustom(customData));customOwner=-1;
  beginBoot(false);tick(4500);assert(startupIndicatorState==STARTUP_IND_AP);tick(5400);assert(startupIndicatorState==STARTUP_IND_FALLBACK);tick(7000);assert(startupSequenceComplete);
  beginBoot(true,3);tick(4500);tick(5400);tick(5425);assert(startupIndicatorState==STARTUP_IND_READY);tick(6475);assert(startupSequenceComplete);
  beginBoot(true);tick(4500);tick(5400);tick(15000);assert(startupIndicatorState==STARTUP_IND_ERROR);tick(16500);assert(startupIndicatorState==STARTUP_IND_FALLBACK);tick(18100);assert(startupSequenceComplete);

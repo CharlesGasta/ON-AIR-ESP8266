@@ -34,7 +34,7 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.2.0 SPATIAL 36LED 100PCT"
+#define FIRMWARE_VERSION "3.3.0 CUES 36LED 100PCT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -1375,7 +1375,9 @@ enum AlertAnimation : uint8_t {
   ALERT_SWEEP_RL = 8,
   ALERT_BREATHE = 9,
   ALERT_IRIS = 10,
-  ALERT_RAINBOW = 11
+  ALERT_RAINBOW = 11,
+  ALERT_SWEEP_TB = 12,
+  ALERT_SWEEP_BT = 13
 };
 
 // V2.6 : choix d'animation d'alerte par macro.
@@ -1892,7 +1894,7 @@ void resetMotionSettings() {
 bool validMotionSettings(const MotionSettings& data) {
   if(data.magic!=MOTION_MAGIC)return false;
   if(configChecksum(reinterpret_cast<const uint8_t*>(&data),sizeof(data)-sizeof(data.checksum))!=data.checksum)return false;
-  for(uint8_t i=0;i<MACRO_COUNT;i++)if(data.mode[i]>7||data.cycleMs[i]<1000||data.cycleMs[i]>12000)return false;
+  for(uint8_t i=0;i<MACRO_COUNT;i++)if(data.mode[i]>10||data.cycleMs[i]<1000||data.cycleMs[i]>12000)return false;
   return true;
 }
 bool saveMotionSettings() {
@@ -1916,7 +1918,7 @@ void loadMotionSettings() {
   if(ok&&validMotionSettings(loaded)){motionSettings=loaded;motionSavedChecksum=loaded.checksum;}
 }
 void readMotionRequest(uint8_t i) {
-  if(server.hasArg("directMotion"))motionSettings.mode[i]=constrain(server.arg("directMotion").toInt(),0,7);
+  if(server.hasArg("directMotion"))motionSettings.mode[i]=constrain(server.arg("directMotion").toInt(),0,10);
   if(server.hasArg("motionCycle"))motionSettings.cycleMs[i]=constrain(server.arg("motionCycle").toInt(),1000,12000);
 }
 
@@ -2057,7 +2059,7 @@ void loadConfig() {
 
     config.macro[i].intensity = constrain(config.macro[i].intensity, 0, 100);
     config.macro[i].idleIntensity = constrain(config.macro[i].idleIntensity, 0, 100);
-    config.macro[i].alertAnimation = constrain(config.macro[i].alertAnimation, (uint8_t)ALERT_CLASSIC, (uint8_t)ALERT_RAINBOW);
+    config.macro[i].alertAnimation = constrain(config.macro[i].alertAnimation, (uint8_t)ALERT_CLASSIC, (uint8_t)ALERT_SWEEP_BT);
     config.macro[i].alertDuration = constrain(config.macro[i].alertDuration, 1, 60);
     config.macro[i].blinkMs = constrain(config.macro[i].blinkMs, 100, 2000);
     config.macro[i].alertEndOn = true;
@@ -2237,7 +2239,7 @@ void motionRainbow(float hue, uint8_t out[3], float level) {
 // arc-en-ciel horizontal, ouverture depuis le centre.
 void renderMotionFrame(uint8_t mode, uint8_t r, uint8_t g, uint8_t b,
                        uint8_t intensity, uint32_t elapsed, uint32_t cycle,
-                       uint8_t frame[][3]) {
+                       uint8_t frame[][3], bool isolateSurfaces=false) {
   if(cycle<500)cycle=500;
   float p=(elapsed%cycle)/(float)cycle;
   float peak=(intensity>100?100:intensity)/100.0f;
@@ -2249,12 +2251,17 @@ void renderMotionFrame(uint8_t mode, uint8_t r, uint8_t g, uint8_t b,
       if(mode==3)pos=1-pos;
       float d=fabsf(x-pos);
       level=.08f+.92f*motionSmooth(1-d/.30f);
+    }else if(mode==8||mode==9){
+      float pos=mode==8?p:1-p;
+      level=.08f+.92f*motionSmooth(1-fabsf(logoY(i)-pos)/.30f);
     }else if(mode==4){
       float d=fmodf(p*36-i+36,36);level=d<7?1-d/7:.04f;
     }else if(mode==7){
       float distance=fabsf(x-.5f)*2;
       level=.08f+.92f*motionSmooth((p*1.4f-distance)/.28f);
     }
+    bool side=(i>=12&&i<17)||i>=31;
+    if((isolateSurfaces&&(mode==2||mode==3||mode==5||mode==7)&&side)||((mode==8||mode==9)&&!side))level=0;
     if(mode==6)motionRainbow(x*.8f-p,frame[i],peak);
     else motionRGB(frame[i],r,g,b,level*peak);
   }
@@ -2287,9 +2294,9 @@ void showMotionFrame(const uint8_t frame[][3]) {
   for(uint16_t i=0;i<LED_COUNT;i++)setPixelLevel(i,frame[i][0],frame[i][1],frame[i][2],100);
   pixels.show();
 }
-void renderSpatialMotion(uint8_t mode,uint8_t r,uint8_t g,uint8_t b,uint8_t intensity,unsigned long elapsed,unsigned long cycle) {
+void renderSpatialMotion(uint8_t mode,uint8_t r,uint8_t g,uint8_t b,uint8_t intensity,unsigned long elapsed,unsigned long cycle,bool isolateSurfaces=false) {
   uint8_t frame[MOTION_LED_COUNT][3];
-  renderMotionFrame(mode,r,g,b,intensity,elapsed,cycle,frame);
+  renderMotionFrame(mode,r,g,b,intensity,elapsed,cycle,frame,isolateSurfaces);
   showMotionFrame(frame);updateLedStatusReference(r,g,b,intensity);
 }
 
@@ -2353,11 +2360,57 @@ void updateStartupIndicator() {
   }
 }
 
+// Custom timeline: 12 cues, each hold/fade + 36 RGB pixels; one cache in RAM.
+static uint8_t customData[1356];
+static int customOwner=-1;
+static bool customValid=false;
+static bool customPreview=false;
+uint16_t customWord(const uint8_t* p){return p[0]|((uint16_t)p[1]<<8);}
+bool validCustom(const uint8_t* p){
+  if(memcmp(p,"CUE1",4)||p[4]!=1||p[5]<1||p[5]>12||p[6]||p[7])return false;
+  uint32_t stored=0;memcpy(&stored,p+1352,4);
+  if(configChecksum(p,1352)!=stored)return false;
+  for(uint8_t n=0;n<p[5];n++){
+    const uint8_t* c=p+8+n*112;
+    if(customWord(c)<100||customWord(c)>60000||customWord(c+2)>20000)return false;
+  }
+  return true;
+}
+bool loadCustom(uint8_t i){
+  if(customOwner==i)return customValid;
+  customOwner=i;customValid=false;
+  char path[24];snprintf(path,sizeof(path),"/custom%u.bin",i);
+  File f=LittleFS.open(path,"r");
+  if(!f)return false;
+  bool ok=f.size()==sizeof(customData)&&f.read(customData,sizeof(customData))==sizeof(customData);
+  f.close();customValid=ok&&validCustom(customData);return customValid;
+}
+void renderCustomOutput(uint8_t i,unsigned long elapsed){
+  MacroConfig& m=config.macro[i];
+  if(!loadCustom(i)){setRGBLevel(m.r,m.g,m.b,m.intensity);return;}
+  uint32_t total=0;for(uint8_t n=0;n<customData[5];n++)total+=customWord(customData+8+n*112)+customWord(customData+10+n*112);
+  uint32_t t=elapsed%total;
+  for(uint8_t n=0;n<customData[5];n++){
+    const uint8_t* c=customData+8+n*112;uint16_t fade=customWord(c+2);
+    uint32_t duration=customWord(c)+fade;
+    if(t>=duration){t-=duration;continue;}
+    const uint8_t* previous=customData+8+(n?n-1:customData[5]-1)*112;
+    float mix=fade?motionClamp(t/(float)fade):1;
+    uint8_t frame[36][3];
+    for(uint8_t led=0;led<36;led++)for(uint8_t k=0;k<3;k++){
+      uint8_t a=(!n&&elapsed<total)?0:previous[4+led*3+k];
+      frame[led][k]=(uint8_t)((a+(c[4+led*3+k]-a)*mix)*m.intensity/100.0f);
+    }
+    showMotionFrame(frame);updateLedStatusReference(m.r,m.g,m.b,m.intensity);return;
+  }
+}
+
 void renderMacroDirect(uint8_t i) {
   if (i >= MACRO_COUNT) return;
 
   MacroConfig& m = config.macro[i];
-  if(!alertRunning&&motionSettings.mode[i])renderSpatialMotion(motionSettings.mode[i],m.r,m.g,m.b,m.intensity,millis()-directMotionStartedAt,motionSettings.cycleMs[i]);
+  if(!alertRunning&&(motionSettings.mode[i]==10||(settingsPreviewActive&&customPreview))){renderCustomOutput(i,millis()-directMotionStartedAt);return;}
+  if(!alertRunning&&motionSettings.mode[i])renderSpatialMotion(motionSettings.mode[i],m.r,m.g,m.b,m.intensity,millis()-directMotionStartedAt,motionSettings.cycleMs[i],true);
   else setRGBLevel(m.r, m.g, m.b, m.intensity);
 }
 
@@ -2657,11 +2710,13 @@ void updateAlert() {
     case ALERT_SWEEP_RL:
     case ALERT_BREATHE:
     case ALERT_IRIS:
+    case ALERT_SWEEP_TB:
+    case ALERT_SWEEP_BT:
     case ALERT_RAINBOW: {
       if(now-alertAnimLastFrameAt<33UL)return;
       alertAnimLastFrameAt=now;
-      uint8_t mode=m.alertAnimation==ALERT_SWEEP_LR?2:m.alertAnimation==ALERT_SWEEP_RL?3:m.alertAnimation==ALERT_BREATHE?1:m.alertAnimation==ALERT_IRIS?7:6;
-      renderSpatialMotion(mode,m.r,m.g,m.b,m.intensity,elapsed,max(1000UL,(unsigned long)m.blinkMs*4UL));
+      uint8_t mode=m.alertAnimation==ALERT_SWEEP_TB?8:m.alertAnimation==ALERT_SWEEP_BT?9:m.alertAnimation==ALERT_SWEEP_LR?2:m.alertAnimation==ALERT_SWEEP_RL?3:m.alertAnimation==ALERT_BREATHE?1:m.alertAnimation==ALERT_IRIS?7:6;
+      renderSpatialMotion(mode,m.r,m.g,m.b,m.intensity,elapsed,max(1000UL,(unsigned long)m.blinkMs*4UL),true);
       alertVisible=true;break;
     }
     case ALERT_CLASSIC:
@@ -2680,6 +2735,7 @@ void updateAlert() {
 }
 
 void showMacroPreview(uint8_t i, bool directState) {
+  customPreview=false;
   if (i >= MACRO_COUNT || alertRunning) return;
 
   cancelStartupIndicator();
@@ -2707,7 +2763,7 @@ void updateSettingsPreview() {
 void updateDirectMotion() {
   if(alertRunning||!startupSequenceComplete)return;
   int i=settingsPreviewActive&&previewMotionDirect?previewMotionMacro:outputEnabled&&!settingsPreviewActive?activeMacro:-1;
-  if(i<0||i>=MACRO_COUNT||motionSettings.mode[i]==0)return;
+  if(i<0||i>=MACRO_COUNT||(motionSettings.mode[i]==0&&!(settingsPreviewActive&&customPreview)))return;
   unsigned long now=millis();if(now-liveMotionLastFrameAt<33UL)return;
   liveMotionLastFrameAt=now;
   renderMacroDirect(i);
@@ -3245,7 +3301,9 @@ function updateAnimationHelp(){
     'Le faisceau traverse le logo de droite à gauche.',
     'Le logo respire, sans dépasser son intensité réglée.',
     'La lumière s’ouvre depuis le centre du logo.',
-    'Un arc-en-ciel traverse les côtés du logo.'
+    'Un arc-en-ciel traverse le logo.',
+    'Balayage vers le bas, uniquement sur les côtés.',
+    'Balayage vers le haut, uniquement sur les côtés.'
   ];
 
   e.textContent=txt[v]||txt[0];
@@ -3612,6 +3670,9 @@ void sendMacroSettingsPage(uint8_t i) {
   c += "<option value='5'";if(motionSettings.mode[i]==5)c += " selected";c += ">Balayage aller-retour</option>";
   c += "<option value='6'";if(motionSettings.mode[i]==6)c += " selected";c += ">Arc-en-ciel</option>";
   c += "<option value='7'";if(motionSettings.mode[i]==7)c += " selected";c += ">Ouverture depuis le centre</option>";
+  c += "<option value='8'";if(motionSettings.mode[i]==8)c += " selected";c += ">Balayage haut → bas</option>";
+  c += "<option value='9'";if(motionSettings.mode[i]==9)c += " selected";c += ">Balayage bas → haut</option>";
+  c += "<option value='10'";if(motionSettings.mode[i]==10)c += " selected";c += ">Animation personnalisée</option>";
   c += "</select><label for='motionCycle'>Durée d’un cycle</label><select id='motionCycle' onchange=\"preview('direct');saveNow()\">";
   const uint16_t cycles[]={1000,2000,3000,4000,6000,8000,12000};
   for(uint8_t n=0;n<7;n++){
@@ -3619,7 +3680,7 @@ void sendMacroSettingsPage(uint8_t i) {
     if(motionSettings.cycleMs[i]==cycles[n])c += " selected";
     c += ">";c += String(cycles[n]/1000);c += " s</option>";
   }
-  c += "</select></section>";
+  c += "</select><p><a href='/animation?i=";c += String(i);c += "'>Créer une animation personnalisée →</a></p></section>";
 
   sendHtmlChunk(c);
   c = "";
@@ -3684,6 +3745,8 @@ void sendMacroSettingsPage(uint8_t i) {
   c += "<option value='9'";if(m.alertAnimation==9)c += " selected";c += ">Respiration</option>";
   c += "<option value='10'";if(m.alertAnimation==10)c += " selected";c += ">Ouverture depuis le centre</option>";
   c += "<option value='11'";if(m.alertAnimation==11)c += " selected";c += ">Arc-en-ciel horizontal</option>";
+  c += "<option value='12'";if(m.alertAnimation==ALERT_SWEEP_TB)c += " selected";c += ">Balayage haut → bas</option>";
+  c += "<option value='13'";if(m.alertAnimation==ALERT_SWEEP_BT)c += " selected";c += ">Balayage bas → haut</option>";
   c += "</select>";
 
   c += "<div id='animationHelp' class='small' style='margin-top:7px'></div>";
@@ -4332,7 +4395,7 @@ bool readMacroRequest(uint8_t& idx,
   idleIntensity = constrain(server.arg("idleIntensity").toInt(), 0, 100);
   idleOff = server.arg("idleOff") == "1";
 
-  alertAnimation = constrain(server.arg("alertAnimation").toInt(), (int)ALERT_CLASSIC, (int)ALERT_RAINBOW);
+  alertAnimation = constrain(server.arg("alertAnimation").toInt(), (int)ALERT_CLASSIC, (int)ALERT_SWEEP_BT);
   alertDuration = constrain(server.arg("alertDuration").toInt(), 1, 60);
   blinkMs = constrain(server.arg("blinkMs").toInt(), 100, 2000);
 
@@ -4516,6 +4579,7 @@ void handleUploadLogoData() {
     if (!validImageExtension(upload.filename)) return;
 
     uploadTargetPath = logoPathFor(uploadTargetMacro, upload.filename);
+    char customPath[24];snprintf(customPath,sizeof(customPath),"/custom%u.bin",i);LittleFS.remove(customPath);
     String png = "/m" + String(uploadTargetMacro+1) + ".png";
     String jpg = "/m" + String(uploadTargetMacro+1) + ".jpg";
     if (LittleFS.exists(png)) LittleFS.remove(png);
@@ -4946,7 +5010,92 @@ void redirectCaptivePortal() {
               "ON AIR - Ouvrir la configuration</a></body></html>");
 }
 
+static const char ANIMATION_EDITOR_HTML[] PROGMEM = R"EDITOR(<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Animation · ON AIR</title><script>try{document.documentElement.dataset.theme=localStorage.getItem('onair-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script><link rel="stylesheet" href="/style.css"><style>
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.editor{max-width:680px;margin:auto;padding:22px 20px 50px}.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.editor .bar button,.editor .cues button{background:var(--panel);color:var(--text);border:1px solid var(--line)}.bar .selected{background:#4669e8;color:white}.board{position:relative;margin:30px 17px;width:calc(100% - 34px);height:210px;border-radius:28px;background:var(--panel);box-shadow:inset 0 0 35px #00000010}.led{position:absolute;width:25px;height:25px;min-height:0;padding:0;border-radius:50%;transform:translate(-50%,-50%);border:2px solid #777;box-shadow:0 0 8px var(--led)}.led[aria-pressed=true]{outline:3px solid #6489ff;outline-offset:3px}.board strong{position:absolute;inset:0;display:grid;place-items:center;font-size:32px;letter-spacing:5px;pointer-events:none;opacity:.2}.cues{display:flex;gap:8px;overflow:auto;padding:8px 3px}.section input[type=color]{height:48px;padding:2px;width:75px}.primary{background:#4669e8!important;color:white!important}.status{min-height:24px;font-size:13px;line-height:1.5;margin:16px 0}.led:active{transform:translate(-50%,-50%)}a{color:inherit}h1{font-size:25px;letter-spacing:-1px}.section button{min-height:42px}.small{margin:10px 0}
+</style><main class="editor"><a id="back" href="/settings">← Retour</a><h1>Animation personnalisée</h1><p class="small">Sélectionnez des LED, choisissez une couleur, puis ajoutez vos étapes.</p><div class="board" id="board"><strong>ON AIR</strong></div><div class="bar" id="groups"></div><section class="section"><div class="bar"><input aria-label="Couleur des LED sélectionnées" id="color" type="color" value="#ff0000"><div class="bar" id="palette"></div></div><p class="small" id="selection"></p><div class="cues" id="cues"></div><div class="bar"><button id="add">+ Étape</button><button id="duplicate">Dupliquer</button><button id="remove">Supprimer</button><button id="earlier" aria-label="Déplacer avant">←</button><button id="later" aria-label="Déplacer après">→</button></div><div class="grid2"><div><label for="hold">Maintien (secondes)</label><input id="hold" type="number" min="0.1" max="60" step="0.1" value="1"></div><div><label for="transition">Transition vers cette étape</label><select id="transition"><option value="cut">Directe</option><option value="fade">Fondu</option></select></div><div><label for="fade">Fondu (secondes)</label><input id="fade" type="number" min="0.1" max="20" step="0.1" value="1" disabled></div></div><p class="small">12 étapes maximum. La séquence boucle ; le premier fondu commence au noir. La luminosité reste celle de l’émission.</p><div class="bar"><button id="play">Lire l’aperçu</button><button id="save" class="primary">Enregistrer</button><button id="test">Tester sur le boîtier</button><button id="off">OFF</button></div><p class="status" id="status" role="status" aria-live="polite"></p><div class="bar"><button id="export">Exporter</button><button id="import">Importer</button><input id="file" type="file" accept=".onair" hidden></div><p class="small">Après enregistrement, choisissez « Animation personnalisée » dans les réglages DIRECT de l’émission. Exportez ici vos séquences pour les sauvegarder séparément des réglages du boîtier.</p></section></main><script>
+'use strict';
+const $=id=>document.getElementById(id),i=Number(new URLSearchParams(location.search).get('i'))||0;
+$('back').href='/macro?i='+i;
+let cues=[{hold:1000,fade:0,rgb:Array(108).fill(0)}],current=0,selected=new Set(Array.from({length:36},(_,n)=>n)),dirty=false,playing=false,started=0;
+const buttons=[];const cue=()=>cues[current];
+function mark(){dirty=true;$('status').textContent='Modifications non enregistrées';}
+function draw(rgb=cue().rgb){buttons.forEach((b,n)=>{const c='rgb('+rgb.slice(n*3,n*3+3).join(',')+')';b.style.background=c;b.style.setProperty('--led',c);b.setAttribute('aria-pressed',selected.has(n));});$('selection').textContent=selected.size+' LED sélectionnée'+(selected.size>1?'s':'');}
+for(let n=0;n<36;n++){const x=n<12?(11-n)/11:n<17?0:n<31?(n-17)/13:1,y=n<12?1:n<17?(17-n)/6:n<31?0:(n-30)/6;const b=document.createElement('button');b.className='led';b.style.left=(x*100)+'%';b.style.top=(y*100)+'%';b.title='LED '+(n+1);b.setAttribute('aria-label','LED '+(n+1));b.onclick=()=>{stop();selected.has(n)?selected.delete(n):selected.add(n);draw();};$('board').append(b);buttons.push(b);}
+for(const [name,fn] of [['Tout',n=>true],['Haut',n=>n>=17&&n<31],['Bas',n=>n<12],['Gauche',n=>n>=12&&n<17],['Droite',n=>n>=31]]){const b=document.createElement('button');b.textContent=name;b.onclick=()=>{selected=new Set(buttons.map((_,n)=>n).filter(fn));draw();};$('groups').append(b);}
+function paint(hex){stop();const rgb=[1,3,5].map(n=>parseInt(hex.slice(n,n+2),16));selected.forEach(n=>cue().rgb.splice(n*3,3,...rgb));mark();draw();}
+for(const [name,c] of [['Rouge','#ff0000'],['Cyan','#00d7d7'],['Violet','#a52ab6'],['Ambre','#ffb42b'],['Blanc','#ffffff'],['Noir','#000000']]){const b=document.createElement('button');b.setAttribute('aria-label',name);b.style.cssText='background:'+c+';width:32px;min-height:32px;padding:0;border:1px solid #888';b.onclick=()=>{$('color').value=c;paint(c);};$('palette').append(b);}
+$('color').oninput=e=>paint(e.target.value);
+function refresh(){stop();$('cues').replaceChildren();cues.forEach((c,n)=>{const b=document.createElement('button');b.textContent=String(n+1).padStart(2,'0');b.className=n===current?'selected':'';b.onclick=()=>{current=n;refresh();};$('cues').append(b);});$('hold').value=cue().hold/1000;$('transition').value=cue().fade?'fade':'cut';$('fade').disabled=!cue().fade;if(cue().fade)$('fade').value=cue().fade/1000;$('add').disabled=$('duplicate').disabled=cues.length>=12;$('remove').disabled=cues.length===1;$('earlier').disabled=!current;$('later').disabled=current===cues.length-1;draw();}
+$('hold').onchange=()=>{cue().hold=Math.round(Math.max(.1,Math.min(60,Number($('hold').value)||1))*1000);mark();refresh();};
+function timing(){cue().fade=$('transition').value==='fade'?Math.round(Math.max(.1,Math.min(20,Number($('fade').value)||1))*1000):0;mark();refresh();}
+$('fade').onchange=$('transition').onchange=timing;
+$('add').onclick=()=>{if(cues.length>=12)return;cues.splice(++current,0,{hold:1000,fade:0,rgb:Array(108).fill(0)});mark();refresh();};
+$('duplicate').onclick=()=>{if(cues.length>=12)return;const copy=JSON.parse(JSON.stringify(cue()));cues.splice(++current,0,copy);mark();refresh();};
+$('remove').onclick=()=>{if(cues.length===1)return;cues.splice(current,1);current=Math.min(current,cues.length-1);mark();refresh();};
+function move(d){const next=current+d;if(next<0||next>=cues.length)return;[cues[current],cues[next]]=[cues[next],cues[current]];current=next;mark();refresh();}
+$('earlier').onclick=()=>move(-1);$('later').onclick=()=>move(1);
+function frame(elapsed){const total=cues.reduce((a,c)=>a+c.hold+c.fade,0);let t=elapsed%total;for(let n=0;n<cues.length;n++){const c=cues[n];if(t>=c.hold+c.fade){t-=c.hold+c.fade;continue;}const prev=cues[(n+cues.length-1)%cues.length],mix=c.fade?Math.min(1,t/c.fade):1;return c.rgb.map((b,k)=>{const a=n===0&&elapsed<total?0:prev.rgb[k];return Math.floor(a+(b-a)*mix);});}}
+function stop(){playing=false;$('play').textContent='Lire l’aperçu';}
+function tick(now){if(!playing)return;draw(frame(now-started));requestAnimationFrame(tick);}
+$('play').onclick=()=>{if(playing){stop();draw();}else{playing=true;started=performance.now();$('play').textContent='Pause';requestAnimationFrame(tick);}};
+function checksum(a){let h=2166136261;for(let n=0;n<1352;n++)h=Math.imul(h^a[n],16777619)>>>0;return h;}
+function encode(){const a=new Uint8Array(1356),v=new DataView(a.buffer);a.set([67,85,69,49,1,cues.length,0,0]);cues.forEach((c,n)=>{const o=8+n*112;v.setUint16(o,c.hold,true);v.setUint16(o+2,c.fade,true);a.set(c.rgb,o+4);});v.setUint32(1352,checksum(a),true);return a;}
+function decode(a){if(a.length!==1356)throw Error('Taille du fichier invalide');const v=new DataView(a.buffer,a.byteOffset,a.byteLength);if(String.fromCharCode(...a.slice(0,4))!=='CUE1'||a[4]!==1||a[5]<1||a[5]>12||a[6]||a[7]||v.getUint32(1352,true)!==checksum(a))throw Error('Fichier invalide ou endommagé');const result=[];for(let n=0;n<a[5];n++){const o=8+n*112,hold=v.getUint16(o,true),fade=v.getUint16(o+2,true);if(hold<100||hold>60000||fade>20000)throw Error('Durée invalide');result.push({hold,fade,rgb:Array.from(a.slice(o+4,o+112))});}return result;}
+async function request(url,options={}){const r=await fetch(url,{...options,signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error(await r.text()||'Connexion impossible');return r;}
+async function save(){const bytes=encode(),snapshot=Array.from(bytes).map(n=>n.toString(16).padStart(2,'0')).join('');await request('/api/custom/save?i='+i,{method:'POST',body:new URLSearchParams({data:snapshot})});if(snapshot===Array.from(encode()).map(n=>n.toString(16).padStart(2,'0')).join(''))dirty=false;$('status').textContent=dirty?'Enregistré ; de nouvelles modifications restent à enregistrer':'Animation enregistrée';}
+function action(fn){return async()=>{try{await fn();}catch(e){$('status').textContent=e.message;}};}
+$('save').onclick=action(save);
+$('test').onclick=action(async()=>{await save();const r=await request('/api/custom/test?i='+i,{method:'POST'});$('status').textContent=await r.text();});
+$('off').onclick=action(async()=>{await request('/api/off');$('status').textContent='Éteint';});
+$('export').onclick=()=>{const url=URL.createObjectURL(new Blob([encode()],{type:'application/octet-stream'})),a=document.createElement('a');a.href=url;a.download='ON_AIR_animation_'+(i+1)+'.onair';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);};
+$('import').onclick=()=>$('file').click();$('file').onchange=action(async()=>{const f=$('file').files[0];if(!f)return;const parsed=decode(new Uint8Array(await f.arrayBuffer()));cues=parsed;current=0;mark();refresh();});
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+refresh();(async()=>{try{const r=await request('/api/custom?i='+i);if(r.status!==204){const loaded=decode(new Uint8Array(await r.arrayBuffer()));if(!dirty){cues=loaded;current=0;refresh();}}}catch(e){$('status').textContent=e.message;}})();
+</script></html>)EDITOR";
+void sendAnimationPage(){
+  uint8_t i;if(!parseMacroIndex(i)){server.send(400,"text/plain","Émission invalide");return;}
+  server.sendHeader("Cache-Control","no-store");server.send_P(200,"text/html; charset=utf-8",ANIMATION_EDITOR_HTML);
+}
+
+void handleCustomGet(){
+  uint8_t i;if(!parseMacroIndex(i)){server.send(400,"text/plain","Émission invalide");return;}
+  char path[24];snprintf(path,sizeof(path),"/custom%u.bin",i);
+  File f=LittleFS.open(path,"r");
+  if(!f){server.send(204,"text/plain","");return;}
+  server.streamFile(f,"application/octet-stream");f.close();
+}
+void handleCustomSave(){
+  uint8_t i;if(!parseMacroIndex(i)){server.send(400,"text/plain","Émission invalide");return;}
+  String hex=server.arg("data");
+  if(hex.length()!=2712){server.send(400,"text/plain","Taille invalide");return;}
+  uint8_t data[1356];
+  for(size_t n=0;n<sizeof(data);n++){
+    char a=hex[n*2],b=hex[n*2+1];
+    int hi=a>='0'&&a<='9'?a-'0':a>='a'&&a<='f'?a-'a'+10:-1;
+    int lo=b>='0'&&b<='9'?b-'0':b>='a'&&b<='f'?b-'a'+10:-1;
+    if(hi<0||lo<0){server.send(400,"text/plain","Format invalide");return;}data[n]=(hi<<4)|lo;
+  }
+  if(!validCustom(data)){server.send(400,"text/plain","Animation invalide");return;}
+  char path[24],temp[24];snprintf(path,sizeof(path),"/custom%u.bin",i);snprintf(temp,sizeof(temp),"/custom%u.tmp",i);
+  File f=LittleFS.open(temp,"w");bool ok=f&&f.write(data,sizeof(data))==sizeof(data);f.flush();f.close();
+  if(!ok||!LittleFS.rename(temp,path)){server.send(500,"text/plain","Enregistrement impossible");return;}
+  customOwner=-1;server.send(200,"text/plain","Enregistré");
+}
+void handleCustomTest(){
+  uint8_t i;if(!parseMacroIndex(i)){server.send(400,"text/plain","Émission invalide");return;}
+  if(outputEnabled||alertRunning){server.send(409,"text/plain","Arrêtez le direct avant le test");return;}
+  if(!loadCustom(i)){server.send(400,"text/plain","Enregistrez une animation");return;}
+  // Preview uses the normal bounded preview scheduler, without changing saved settings.
+  showMacroPreview(i,true);previewMotionMacro=i;previewMotionDirect=true;
+  customPreview=true;renderCustomOutput(i,0);settingsPreviewUntil=millis()+15000UL;
+  server.send(200,"text/plain","Test : 15 secondes maximum");
+}
+
 void setupWebServer() {
+  server.on("/animation",HTTP_GET,sendAnimationPage);
+  server.on("/api/custom",HTTP_GET,handleCustomGet);
+  server.on("/api/custom/save",HTTP_POST,handleCustomSave);
+  server.on("/api/custom/test",HTTP_POST,handleCustomTest);
   server.on("/style.css",HTTP_GET,handleStyleCSS);
 
   server.on("/",HTTP_GET,sendControlPage);
