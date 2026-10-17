@@ -1,5 +1,12 @@
 # Changelog
 
+## V3.1.1 — Interface épurée
+
+- nouveau dessin clair : cartes arrondies, boutons teintés, icônes et police système
+- retrait des textes d’accueil, numéros, mentions PRÊT et cadres de logos
+- nom du boîtier, connexion, roue crantée et commande OFF uniquement autour des émissions
+- réglages harmonisés ; fonctions et paramètres conservés
+
 ## V3.1.0 — Studio mobile
 
 - refonte complète de la console mobile, réglages et éditeur des émissions

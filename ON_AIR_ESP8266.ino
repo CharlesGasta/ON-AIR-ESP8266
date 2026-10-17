@@ -33,7 +33,7 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.1.0 STUDIO MOBILE 36LED 100PCT"
+#define FIRMWARE_VERSION "3.1.1 STUDIO MOBILE 36LED 100PCT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -2640,12 +2640,13 @@ String mimeTypeForPath(String path) {
 }
 
 static const char COMMON_CSS[] PROGMEM = R"CSS(
-:root{color-scheme:dark;--bg:#101214;--panel:#1b1e22;--line:#33383e;--text:#f4f3ee;--muted:#a6adb6;--red:#ee544f;--amber:#f1bf67;--green:#8ed5b1;--radius:18px}
-*{box-sizing:border-box}[hidden]{display:none!important}html{scroll-behavior:smooth;scroll-padding-top:90px}html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}body{min-height:100vh;line-height:1.45;-webkit-tap-highlight-color:transparent}button,input,select{font:inherit}a{color:inherit}button,a,input,select,summary{touch-action:manipulation}button,a,input,select,summary:focus{outline-offset:4px}:focus-visible{outline:3px solid var(--amber);outline-offset:4px}button:focus:not(:focus-visible){outline:none}
-.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px max(18px,calc((100vw - 920px)/2));min-height:68px;background:#101214;border-bottom:1px solid var(--line)}.title{font-size:15px;font-weight:750;letter-spacing:.02em;min-width:0;overflow-wrap:anywhere}.brand{display:flex;gap:10px;align-items:center}.brandmark{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--red);color:#111;font-size:11px;font-weight:900;letter-spacing:-.6px}.brand small{display:block;color:var(--muted);font-size:11px;font-weight:450;letter-spacing:.02em;max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.iconbtn{display:inline-flex;align-items:center;justify-content:center;gap:7px;flex-shrink:0;text-decoration:none;color:var(--text);background:#23272c;border:1px solid var(--line);border-radius:12px;padding:10px 13px;min-height:44px;font-size:13px;font-weight:650}.iconbtn:hover{border-color:#747e89}
-.wrap{width:min(960px,100%);margin:auto;padding:24px 20px 40px}.control .wrap{padding-bottom:125px}.eyebrow{font-size:10px;font-weight:750;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}.hero{padding:0 0 22px}.hero-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.connection{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}.connection:before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}.connection[data-state=online]{color:var(--green)}.connection[data-state=offline]{color:var(--amber)}.hero h1{font-size:32px;letter-spacing:-1px;line-height:1.12;margin:0 0 8px;font-weight:750;overflow-wrap:anywhere}.hero p{margin:0;font-size:13px;color:var(--muted)}body[data-mode=live] .hero h1{color:var(--red)}body[data-mode=alert] .hero h1{color:var(--amber)}.bank-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}.bank-head h2{font-size:12px;font-weight:650;margin:0;letter-spacing:.08em;text-transform:uppercase}.textlink{font-size:12px;color:var(--muted);text-underline-offset:4px;min-height:30px;display:inline-flex;align-items:center}.macro-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;transition:border-color .15s}.card[data-active=true]{border-color:var(--red);box-shadow:inset 3px 0 var(--red)}.card[data-alert=true]{border-color:var(--amber);box-shadow:inset 3px 0 var(--amber)}.macrohead{display:flex;gap:12px;align-items:center;padding:16px 16px 12px}.logo,.nologo{flex-shrink:0;width:48px;height:48px;border-radius:12px;background:#fff;border:1px solid #ffffff16}.logo{object-fit:contain;padding:5px}.nologo{display:grid;place-items:center;color:#a6adb6;background:#272c32;font-size:19px;font-weight:650}.mname{flex:1;min-width:0}.mname h2{margin:0 0 3px;font-size:19px;font-weight:700;letter-spacing:-.5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.meta{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap}.swatch{display:inline-block;width:7px;height:7px;border-radius:50%;border:1px solid #ffffff55;flex-shrink:0}.channel-info{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}.channel-no{font-size:10px;color:#a6adb6;align-self:flex-start;font-variant-numeric:tabular-nums;letter-spacing:.08em}.card-state{font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.07em;margin-left:auto}.card[data-active=true] .card-state{color:var(--red)}.card[data-alert=true] .card-state{color:var(--amber)}.actions{display:grid;grid-template-columns:1.15fr 1fr;gap:8px;padding:0 16px 16px}
-button{border:1px solid transparent;border-radius:12px;min-height:48px;padding:11px 14px;font-size:14px;font-weight:650;cursor:pointer;transition:background .12s,border-color .12s,opacity .12s,transform .08s}button:active{transform:translateY(1px)}button:disabled{cursor:not-allowed;opacity:.4;transform:none}.direct{color:var(--text);background:#30363d;border-color:#454d57}.direct.active{box-shadow:inset 0 0 0 1px #ffffff65}.alert{color:var(--amber);background:#342c20;border-color:#6e5632}.alert.active{background:var(--amber);color:#20180c;border-color:var(--amber)}.direct:hover:not(:disabled){border-color:#a6adb6}.alert:hover:not(:disabled){border-color:var(--amber)}.alertbar{display:none;margin:0 0 14px;padding:12px 14px;background:#342c20;border:1px solid #6e5632;border-radius:12px;color:var(--amber);font-size:13px;font-weight:600}.transport{position:fixed;bottom:0;left:0;right:0;z-index:30;border-top:1px solid var(--line);background:#101214;padding:12px 20px max(12px,env(safe-area-inset-bottom))}.transport-inner{width:min(920px,100%);margin:auto;display:flex;align-items:center;gap:18px}.transport-copy{flex:1}.transport-copy b{display:block;font-size:12px}.transport-copy span{display:block;color:var(--muted);font-size:11px}.blackout{flex:1;max-width:360px;min-height:52px;background:#f4f3ee;border:1px solid #f4f3ee;color:#151719;font-size:14px;font-weight:800;letter-spacing:.04em}.blackout small{font-weight:450;letter-spacing:0;margin-left:8px}.feedback{min-height:20px;font-size:12px;color:var(--amber);margin-top:12px}.status{color:var(--muted);font-size:13px}.section{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:16px;padding:20px;overflow:hidden}.section h2{margin:0 0 10px;font-size:20px;letter-spacing:-.4px}.section h3{font-size:14px;font-weight:750;letter-spacing:.04em}.section>p{color:var(--muted);font-size:13px}.section label{display:block;font-size:13px;color:#c6cbd2;margin:18px 0 7px}.section input,.section select{width:100%;min-width:0;min-height:48px;background:#121518;color:var(--text);border:1px solid #454d57;border-radius:10px;padding:12px;font-size:16px}.section input[type=checkbox]{width:20px!important;min-height:20px;height:20px;vertical-align:middle;accent-color:var(--red)}.section input[type=color]{height:52px;padding:5px;cursor:pointer}.section input[type=range]{padding:0;min-height:44px;accent-color:var(--red);border:0;background:transparent}.section input[type=file]{font-size:13px;padding:10px;max-width:100%}.section input::file-selector-button{background:#30363d;color:var(--text);border:0;border-radius:6px;padding:7px;margin-right:8px}.grid2,.testrow{display:grid;grid-template-columns:1fr 1fr;gap:14px}.testrow{margin-top:16px}.save{display:block;width:100%;margin-top:16px;background:#e5e9ed;color:#171b20;border:1px solid #e5e9ed;border-radius:12px;font-size:13px;font-weight:700;min-height:48px}.small{color:var(--muted);font-size:12px;line-height:1.65;overflow-wrap:anywhere}.danger{width:100%;background:#352023;color:#ffb3ae;border:1px solid #6d363a;margin-top:10px;font-size:13px}.filebox{padding:16px;border:1px dashed #4b535e;border-radius:12px;background:#15181c}.wifilist{display:flex;flex-direction:column;gap:8px}.wifirow{width:100%;min-height:64px;text-align:left;background:#15181c;color:var(--text);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px}.wifiname{font-weight:650;font-size:14px;overflow-wrap:anywhere}.wifimeta{font-size:11px;color:var(--muted);white-space:normal;line-height:1.6}.settings-intro{margin:0 0 22px}.settings-intro h1{font-size:30px;letter-spacing:-.8px;margin:4px 0}.settings-intro p{font-size:13px;color:var(--muted);margin:0}.jumpnav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 22px}.jumpnav a{text-decoration:none;padding:9px 13px;background:#23272c;border:1px solid var(--line);border-radius:30px;font-size:12px;min-height:40px;display:flex;align-items:center}.section summary{cursor:pointer;font-size:16px;font-weight:650;min-height:28px;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px}.section summary::-webkit-details-marker{display:none}.section summary:after{content:'+';font-size:22px;font-weight:400;color:var(--muted)}.section[open]>summary{margin-bottom:18px}.section[open]>summary:after{content:'−'}.section[id]{scroll-margin-top:85px}.settings-macros .wifirow:hover{border-color:#7b8795}.settings-macros a{text-decoration:none}.autosave{position:sticky;top:82px;z-index:8;background:#1b2722;border:1px solid #375b49;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:18px}.fieldgroup{margin-top:18px;padding-top:6px;border-top:1px solid var(--line)}.fieldgroup h3{margin:14px 0 6px}.fieldgroup>p{font-size:12px;color:var(--muted);margin:0 0 12px}.password-wrap{position:relative}.password-wrap input{padding-right:78px}.password-toggle{position:absolute;right:4px;top:4px;min-height:40px;padding:5px 9px;background:#23272c;color:var(--muted);border-radius:7px;font-size:11px}.footer-note{font-size:11px;color:#818b97;text-align:center;padding:6px 0 12px}.macro-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55vw}
-@media(max-width:600px){.top{min-height:62px;padding:10px 16px}.wrap{padding:20px 16px 32px}.control .wrap{padding-top:20px}.macro-grid{grid-template-columns:1fr;gap:10px}.hero{padding-bottom:18px}.hero h1{font-size:29px}.macrohead{padding:12px 14px 9px;gap:10px}.logo,.nologo{width:40px;height:40px;border-radius:10px}.mname h2{font-size:17px}.actions{padding:0 14px 12px}.actions button{min-height:44px;padding:9px 10px;font-size:13px}.transport{padding-left:16px;padding-right:16px}.transport-copy{display:none}.blackout{max-width:none}.section{padding:16px}.grid2{grid-template-columns:1fr}.title{font-size:13px}.iconbtn{font-size:12px}.channel-no{font-size:9px}.brand small{max-width:160px}.hero-top{margin-bottom:8px}.autosave{top:72px}}
+:root{color-scheme:light;--bg:#f3f4f8;--panel:#fff;--text:#191a20;--muted:#6b6f7d;--line:#e7e8ee;--red:#ee4c58;--amber:#a35d00;--green:#268154;--radius:26px}
+*{box-sizing:border-box}[hidden]{display:none!important}html{scroll-behavior:smooth;scroll-padding-top:90px}html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif}body{min-height:100vh;line-height:1.45;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}button,input,select{font:inherit}a{color:inherit}button,a,input,select,summary{touch-action:manipulation}:focus-visible{outline:3px solid #4084f4;outline-offset:4px}button:focus:not(:focus-visible){outline:none}.sr-only{position:absolute!important;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:70px;padding:14px max(20px,calc((100vw - 880px)/2));background:#f3f4f8ed;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}.title{font-size:18px;font-weight:600;letter-spacing:-.5px;min-width:0;overflow-wrap:anywhere}.iconbtn{display:inline-flex;align-items:center;justify-content:center;gap:7px;flex-shrink:0;min-height:44px;padding:10px 14px;border:0;border-radius:22px;background:#fff9;color:#3b68ba;text-decoration:none;font-size:14px;font-weight:500}.iconbtn:hover{background:#fff}.wrap{width:min(920px,100%);margin:auto;padding:20px 20px 40px}
+.control{background:radial-gradient(ellipse at 100% 0%,#e7edff 0%,transparent 47%),radial-gradient(ellipse at 0% 90%,#faeae7 0%,transparent 43%),#f3f4f8;background-attachment:fixed}.control-top{position:relative;width:min(920px,100%);margin:auto;padding:28px 24px 22px;background:none;backdrop-filter:none;-webkit-backdrop-filter:none;align-items:flex-start}.control-top .title{font-size:29px;line-height:1.2;font-weight:650;letter-spacing:-1.1px;margin:0 0 8px}.connection{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:400;letter-spacing:0}.connection:before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}.connection[data-state=online]{color:#56826a}.connection[data-state=offline]{color:#a46c28}.settings-button{width:44px;height:44px;padding:0;color:#454a59;background:#fff9;box-shadow:0 2px 12px #242c4905}.settings-button svg{width:22px;height:22px;stroke-width:1.6}.control .wrap{padding:0 24px 118px}.macro-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{position:relative;border:1px solid #ffffffcc;background:#ffffffd9;border-radius:var(--radius);overflow:hidden;box-shadow:0 4px 22px #28315a05;transition:box-shadow .2s,border-color .2s,background .2s}.card[data-active=true]{border-color:var(--channel);background:#fff;box-shadow:0 0 0 1px var(--channel),0 8px 28px var(--wash)}.card[data-alert=true]{border-color:#e3b556;background:#fffdf7;box-shadow:0 0 0 1px #e3b556}.macrohead{display:flex;gap:13px;align-items:center;padding:18px 18px 14px}.logo,.nologo{flex-shrink:0;width:48px;height:48px;border:0;border-radius:14px;background:transparent}.logo{object-fit:contain;padding:0}.nologo{display:grid;place-items:center;font-size:22px;color:#777b88;background:var(--wash)}.mname{flex:1;min-width:0}.mname h2{font-size:20px;font-weight:600;letter-spacing:-.65px;line-height:1.25;margin:0 0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.meta{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}.meta svg{width:12px;height:12px;stroke-width:1.5}.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 18px 17px}
+button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:24px;min-height:46px;padding:11px 15px;font-size:14px;font-weight:550;cursor:pointer;transition:background .15s,opacity .15s,transform .12s}button svg{width:18px;height:18px;stroke-width:1.7;flex-shrink:0}button:active{transform:scale(.97)}button:disabled{cursor:not-allowed;opacity:.42;transform:none}.direct{background:var(--wash,#eceef5);color:#30313b}.direct svg{color:var(--channel,#777b88)}.direct.active svg{color:inherit}.alert{background:#fff0d7;color:#9a610c}.alert.active{background:#eab759;color:#3e2b06}.direct:hover:not(:disabled),.alert:hover:not(:disabled){filter:brightness(.97)}.transport{position:fixed;bottom:0;left:0;right:0;z-index:30;padding:14px 24px max(18px,env(safe-area-inset-bottom));background:linear-gradient(0deg,#f3f4f8 20%,#f3f4f8eb 75%,#f3f4f800)}.transport-inner{width:min(872px,100%);margin:auto;display:flex;justify-content:center}.blackout{width:100%;min-height:52px;border-radius:28px;background:#22232a;color:#fff;box-shadow:0 6px 18px #25283612;font-size:14px;font-weight:600;letter-spacing:.04em}.blackout svg{width:18px;height:18px}.feedback{font-size:12px;line-height:1.5;color:#9a4b13;padding:12px 2px 0}.feedback:empty{display:none}
+.section{padding:22px;border:0;background:var(--panel);border-radius:var(--radius);margin-bottom:14px;overflow:hidden;box-shadow:0 3px 18px #28315a04}.section h2{font-size:21px;font-weight:600;letter-spacing:-.6px;margin:0 0 12px}.section h3{font-size:16px;font-weight:600;letter-spacing:-.3px}.section>p,.small{font-size:12px;color:var(--muted);line-height:1.65;overflow-wrap:anywhere}.section label{display:block;font-size:13px;font-weight:500;color:#666b78;margin:18px 0 7px}.section input,.section select{width:100%;min-width:0;min-height:48px;padding:12px 14px;background:#f4f5f9;color:var(--text);border:1px solid transparent;border-radius:14px;font-size:16px}.section input[type=checkbox]{width:20px!important;min-height:20px;height:20px;vertical-align:middle;accent-color:#4982e8}.section input[type=color]{height:50px;padding:5px;cursor:pointer}.section input[type=range]{padding:0;min-height:44px;accent-color:#4982e8;border:0;background:transparent}.section input[type=file]{font-size:12px;padding:9px;max-width:100%}.section input::file-selector-button{border:0;border-radius:9px;padding:7px 10px;background:#e6e9f2;color:#333945;margin-right:8px}.grid2,.testrow{display:grid;grid-template-columns:1fr 1fr;gap:14px}.testrow{margin-top:16px}.save{display:flex;width:100%;margin-top:16px;min-height:46px;border:0;border-radius:24px;background:#3478e5;color:#fff;font-size:13px;font-weight:550;text-decoration:none}.danger{width:100%;background:#fff0f0;color:#b3434a;margin-top:10px;font-size:13px}.filebox{padding:16px;border:0;border-radius:18px;background:#f5f6fa}.wifilist{display:flex;flex-direction:column;gap:8px}.wifirow{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:64px;padding:13px;background:#f5f6fa;border:0;border-radius:18px;text-align:left;color:var(--text)}.wifiname{font-weight:550;font-size:15px;overflow-wrap:anywhere}.wifimeta{font-size:11px;color:var(--muted);line-height:1.6;white-space:normal}.settings-intro{margin:0 0 20px}.settings-intro h1{font-size:29px;font-weight:650;letter-spacing:-1px;margin:0}.settings-intro p,.eyebrow{display:none}.jumpnav{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 22px}.jumpnav a{display:flex;align-items:center;min-height:40px;padding:9px 14px;border:0;border-radius:22px;background:#e6eaf4;color:#4e6184;font-size:12px;text-decoration:none}.section summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:28px;font-size:16px;font-weight:550;cursor:pointer;list-style:none}.section summary::-webkit-details-marker{display:none}.section summary:after{content:'›';font-size:24px;color:#a1a6b0;font-weight:400;transform:rotate(0)}.section[open]>summary{margin-bottom:16px}.section[open]>summary:after{transform:rotate(90deg)}.section[id]{scroll-margin-top:80px}.settings-macros a{text-decoration:none}.settings-macros .logo{width:40px!important;height:40px!important}.autosave{font-size:12px;color:#447b5b;background:#f0f8f2;border:0;border-radius:12px;padding:10px 12px;margin-bottom:18px}.fieldgroup{margin-top:18px;padding-top:4px;border-top:1px solid var(--line)}.fieldgroup h3{margin:14px 0 6px}.fieldgroup>p{display:none}.password-wrap{position:relative}.password-wrap input{padding-right:78px}.password-toggle{position:absolute;right:4px;top:4px;min-height:40px;padding:5px 9px;border-radius:11px;background:#e9ecf4;color:#506384;font-size:11px}.macro-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55vw}
+@media(max-width:600px){.top{padding:12px 20px;min-height:64px}.control-top{padding:28px 22px 22px}.control-top .title{font-size:28px}.control .wrap{padding:0 20px 110px}.macro-grid{grid-template-columns:1fr;gap:13px}.macrohead{padding:15px 17px 12px}.logo,.nologo{width:46px;height:46px}.mname h2{font-size:19px}.actions{padding:0 16px 15px;gap:10px}.actions button{min-height:44px;padding:9px 12px;font-size:14px}.wrap{padding:16px 20px 30px}.section{padding:18px}.grid2{grid-template-columns:1fr}.iconbtn{font-size:13px}.transport{padding-left:20px;padding-right:20px}.settings-button{width:44px;height:44px}.title{font-size:16px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition:none!important;animation:none!important}}
 )CSS";
 
@@ -2678,24 +2679,24 @@ function renderStatus(){
   badge.dataset.state=connected?'online':'offline';
   badge.textContent=connected?'Boîtier connecté':'Connexion à vérifier';
   document.body.dataset.mode=!connected?'unknown':s.alert_running?'alert':s.output_enabled?'live':'idle';
-  el('status').textContent=!connected?'État non confirmé':s.alert_running?'Alerte en cours':s.output_enabled?'En direct':s.active_macro>=0?'Hors direct':'Prêt pour le direct';
-  el('statusDetail').textContent=!connected?'Vérifiez votre connexion au Wi-Fi du boîtier.':s.alert_running?s.active_name+' · passage automatique en DIRECT':s.output_enabled?s.active_name+' · appuyez à nouveau sur DIRECT pour quitter':s.active_macro>=0?s.active_name+' · éclairage hors direct':'Choisissez une émission pour commencer.';
+  el('status').textContent=!connected?'État non confirmé':s.alert_running?'Alerte · '+s.active_name:s.output_enabled?'En direct · '+s.active_name:s.active_macro>=0?'Hors direct · '+s.active_name:'OFF';
   bar.hidden=!(connected&&s.alert_running);
   bar.style.display=bar.hidden?'none':'block';
-  bar.textContent=connected&&s.alert_running?'Séquence en cours · OFF / NOIR reste disponible.':'';
+  bar.textContent=connected&&s.alert_running?'Alerte en cours':'';
   for(let i=0;i<4;i++){
     const card=el('macro-'+i),d=el('direct-'+i),a=el('alert-'+i);
     const live=!!(connected&&s.output_enabled&&!s.alert_running&&s.active_macro===i);
     const alert=!!(connected&&s.alert_running&&s.alert_macro===i);
     card.dataset.active=String(live);card.dataset.alert=String(alert);
-    el('state-'+i).textContent=alert?'ALERTE':live?'EN DIRECT':'PRÊT';
+
     d.classList.toggle('active',live);a.classList.toggle('active',alert);
     d.setAttribute('aria-pressed',String(live));a.setAttribute('aria-pressed',String(alert));
     d.style.background=live?d.dataset.color:'';d.style.color=live?textColor(d.dataset.color):'';
-    d.textContent=live?'Quitter le direct':'DIRECT';a.textContent=alert?'En cours…':'ALERTE';
+    el('direct-label-'+i).textContent=live?'En direct':'Direct';el('alert-label-'+i).textContent=alert?'Alerte…':'Alerte';
+    d.setAttribute('aria-label',live?'Quitter le direct':'Direct');
     d.disabled=!connected||commandBusy||s.alert_running||(s.output_enabled&&s.active_macro!==i);
     a.disabled=!connected||commandBusy||s.alert_running||s.output_enabled;
-    if(!connected)el('state-'+i).textContent='—';
+
   }
 }
 async function command(path,blackout=false){
@@ -2761,24 +2762,15 @@ void sendControlPage() {
 
   chunk +=
     "</title>"
-    "<style>html,body{margin:0;background:#090b0e;color:#f4f6f8}</style>"
-    "<link rel='stylesheet' href='/style.css?v=310'>"
+    "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>"
+    "<link rel='stylesheet' href='/style.css?v=311'>"
     "</head><body class='control' data-mode='unknown'>"
-    "<header class='top'><div class='brand'><span class='brandmark' aria-hidden='true'>ON</span>"
-    "<div class='title'>ON AIR<small>";
-
+    "<header class='top control-top'><div><h1 class='title'>";
   chunk += htmlEscape(config.deviceName);
-
-  chunk +=
-    "</small></div></div><a class='iconbtn' href='/settings' aria-label='Ouvrir les réglages'>Réglages <span aria-hidden='true'>↗</span></a></header>"
-    "<main class='wrap'><section class='hero' aria-label='État du boîtier'>"
-    "<div class='hero-top'><span class='eyebrow'>Console de diffusion</span>"
-    "<span id='connection' class='connection' data-state='offline'>Connexion…</span></div>"
-    "<h1 id='status' role='status' aria-live='polite'>Connexion au boîtier</h1>"
-    "<p id='statusDetail'>Vérification de l’état…</p></section>"
-    "<div id='alertbar' class='alertbar' hidden></div>"
-    "<div class='bank-head'><h2>Vos émissions</h2><a class='textlink' href='/settings#macros'>Personnaliser</a></div>"
-    "<div class='macro-grid'>";
+  chunk += "</h1><span id='connection' class='connection' data-state='offline'>Connexion…</span></div>"
+    "<a class='iconbtn settings-button' href='/settings' aria-label='Réglages'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='m9.5 3-.6 2.1-1.7 1-2.2-.5-2.5 4.3L4.1 12l-1.6 2.1L5 18.4l2.2-.5 1.7 1 .6 2.1h5l.6-2.1 1.7-1 2.2.5 2.5-4.3L19.9 12l1.6-2.1L19 5.6l-2.2.5-1.7-1-.6-2.1Z'/><circle cx='12' cy='12' r='3.2'/></svg></a></header>"
+    "<main class='wrap'><div id='status' class='sr-only' role='status' aria-live='polite'></div>"
+    "<div id='alertbar' class='sr-only' hidden></div><div class='macro-grid'>";
 
   server.sendContent(chunk);
   chunk = "";
@@ -2795,7 +2787,11 @@ void sendControlPage() {
 
     chunk = "<section class='card' id='macro-";
     chunk += String(i);
-    chunk += "'><div class='macrohead'>";
+    chunk += "' style='--channel:";
+    chunk += directColor;
+    chunk += ";--wash:";
+    chunk += directColor;
+    chunk += "16'><div class='macrohead'>";
 
     if (logoAvailable(i)) {
       chunk += "<img class='logo' src='/logo?i=";
@@ -2803,7 +2799,7 @@ void sendControlPage() {
       chunk += "' alt='' decoding='async'>";
     } else {
       chunk += "<div class='nologo' aria-hidden='true'>";
-      chunk += String(i + 1);
+      chunk += "•";
       chunk += "</div>";
     }
 
@@ -2811,20 +2807,9 @@ void sendControlPage() {
     chunk += htmlEscape(String(m.name));
     chunk += "</h2><div class='meta'>";
 
-    chunk += "<span class='swatch' aria-hidden='true' style='background:";
-    chunk += directColor;
-    chunk += "'></span>";
+    chunk += "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' aria-hidden='true'><circle cx='12' cy='12' r='4'/><path d='M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5'/></svg>";
     chunk += String(m.intensity);
-    chunk += " % · alerte ";
-    chunk += String(m.alertDuration);
-    chunk += "s</div></div>";
-
-    chunk += "<div class='channel-info'><span class='channel-no'>0";
-    chunk += String(i + 1);
-    chunk += "</span>";
-    chunk += "<span class='card-state' id='state-";
-    chunk += String(i);
-    chunk += "'>—</span></div></div>";
+    chunk += " %</div></div></div>";
 
     chunk += "<div class='actions'>";
 
@@ -2834,7 +2819,9 @@ void sendControlPage() {
     chunk += directColor;
     chunk += "' onclick='directMacro(";
     chunk += String(i);
-    chunk += ")'>DIRECT</button>";
+    chunk += ")'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' aria-hidden='true'><circle cx='12' cy='12' r='3' fill='currentColor' stroke='none'/><path d='M7 7a7 7 0 0 0 0 10M17 7a7 7 0 0 1 0 10M4 4a11.3 11.3 0 0 0 0 16M20 4a11.3 11.3 0 0 1 0 16'/></svg><span id='direct-label-";
+    chunk += String(i);
+    chunk += "'>Direct</span></button>";
 
     chunk += "<button id='alert-";
     chunk += String(i);
@@ -2846,7 +2833,9 @@ void sendControlPage() {
     chunk += (m.idleOff ? "1" : "0");
     chunk += "' onclick='alertMacro(";
     chunk += String(i);
-    chunk += ")'>ALERTE</button>";
+    chunk += ")'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4'/></svg><span id='alert-label-";
+    chunk += String(i);
+    chunk += "'>Alerte</span></button>";
 
     chunk += "</div></section>";
 
@@ -2858,11 +2847,9 @@ void sendControlPage() {
 
   server.sendContent(
     "</div><div id='feedback' class='feedback' role='status' aria-live='polite'></div>"
-    "<div class='footer-note'>ON AIR · Contrôle local</div></main>"
-    "<footer class='transport'><div class='transport-inner'>"
-    "<div class='transport-copy'><b>Sortie lumière</b><span>Extinction immédiate, à tout moment.</span></div>"
-    "<button id='offBtn' class='blackout' type='button' onclick='offOnAir()'>"
-    "■ OFF / NOIR <small>Tout éteindre</small></button></div></footer>"
+    "</main><footer class='transport'><div class='transport-inner'>"
+    "<button id='offBtn' class='blackout' type='button' onclick='offOnAir()' aria-label='OFF : tout éteindre'>"
+    "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' aria-hidden='true'><path d='M12 3v9M6.4 5.4a9 9 0 1 0 11.2 0'/></svg>OFF</button></div></footer>"
   );
 
   server.sendContent_P(CONTROL_PAGE_JS);
@@ -3087,7 +3074,7 @@ function saveState(text,color){
 
 function scheduleSave(){
   unsaved=true;
-  saveState('Modifications en attente…','#f1bf67');
+  saveState('Modifications en attente…','#986100');
   clearTimeout(saveTimer);
   saveTimer=setTimeout(saveNow,650);
 }
@@ -3101,15 +3088,15 @@ async function saveNow(){
       do{
         saveDirty=false;
         const snapshot=params().toString();
-        saveState('Enregistrement…','#f1bf67');
+        saveState('Enregistrement…','#986100');
         await macroRequest('/api/macroSave?'+snapshot);
         if(snapshot!==params().toString())saveDirty=true;
       }while(saveDirty);
       unsaved=false;
-      saveState('✓ Tous les réglages sont enregistrés','#8ed5b1');
+      saveState('✓ Tous les réglages sont enregistrés','#26754a');
       return true;
     }catch(e){
-      saveState('Non enregistré · vérifiez la connexion et réessayez.','#ffb3ae');
+      saveState('Non enregistré · vérifiez la connexion et réessayez.','#b43d45');
       return false;
     }finally{savePromise=null;}
   })();
@@ -3128,7 +3115,7 @@ async function flushPreview(){
   const state=pendingPreview;pendingPreview=null;
   const q=params();q.set('state',state);
   try{await macroRequest('/api/macroPreview?'+q.toString());}
-  catch(e){saveState('Aperçu non confirmé · vérifiez la connexion.','#f1bf67');}
+  catch(e){saveState('Aperçu non confirmé · vérifiez la connexion.','#986100');}
   finally{previewBusy=false;if(pendingPreview!==null)previewTimer=setTimeout(flushPreview,100);}
 }
 
@@ -3160,7 +3147,7 @@ async function testAlert(){
   if(!await saveNow())return;
   let r;
   try{r=await macroRequest('/api/alertTest?i='+macroIndex);}
-  catch(e){saveState('Test non confirmé · vérifiez la connexion.','#f1bf67');return;}
+  catch(e){saveState('Test non confirmé · vérifiez la connexion.','#986100');return;}
 
   // Le test se termine automatiquement TOUT ETEINT.
   // Aucun retour au menu principal n'est necessaire.
@@ -3236,13 +3223,13 @@ void sendSettingsPage() {
     "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>Réglages · ON AIR</title>"
-    "<style>html,body{margin:0;background:#090b0e;color:#f4f6f8}</style>"
-    "<link rel='stylesheet' href='/style.css?v=310'>"
+    "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>"
+    "<link rel='stylesheet' href='/style.css?v=311'>"
     "</head><body>"
     "<header class='top'><div class='title'>Réglages</div>"
     "<a class='iconbtn' href='/'>← Console</a></header>"
-    "<main class='wrap'><div class='settings-intro'><span class='eyebrow'>Votre espace de travail</span>"
-    "<h1>À votre image.</h1><p>Émissions, couleurs et connexions. Chaque chose à sa place.</p></div>"
+    "<main class='wrap'>"
+    ""
     "<nav class='jumpnav' aria-label='Rubriques'><a href='#macros'>Émissions</a>"
     "<a href='#general'>Boîtier</a><a href='#network'>Wi-Fi</a><a href='#system'>Système</a></nav>"
 
@@ -3252,7 +3239,7 @@ void sendSettingsPage() {
   sendHtmlChunk(
     "<section id='macros' class='section settings-macros'><h2>Vos émissions</h2>"
     "<div class='small' style='margin-bottom:12px'>"
-    "Choisissez une émission pour régler ses couleurs, son alerte et son identité."
+    ""
     "</div>"
   );
 
@@ -3274,13 +3261,9 @@ void sendSettingsPage() {
       c += "<div class='nologo' style='width:46px;height:46px'>LOGO</div>";
     }
 
-    c += "<div style='min-width:0'><div class='wifiname'>Macro ";
-    c += String(i + 1);
-    c += " — ";
+    c += "<div style='min-width:0'><div class='wifiname'>";
     c += htmlEscape(String(m.name));
-    c += "</div><div class='wifimeta'>DIRECT ";
-    c += rgbToHex(m.r,m.g,m.b);
-    c += " · ";
+    c += "</div><div class='wifimeta'>";
     c += String(m.intensity);
     c += "%";
 
@@ -3288,8 +3271,7 @@ void sendSettingsPage() {
       c += " · HORS DIRECT eteint";
     } else {
       c += " · HORS DIRECT ";
-      c += rgbToHex(m.idleR,m.idleG,m.idleB);
-      c += " · ";
+
       c += String(m.idleIntensity);
       c += "%";
     }
@@ -3342,7 +3324,7 @@ void sendSettingsPage() {
   c += "<input id='externalSSID' name='externalSSID' maxlength='32' value='' placeholder='Selectionne un Wi-Fi ci-dessus'>";
   c += "<label>Mot de passe</label>";
   c += "<input id='externalPassword' name='externalPassword' type='password' maxlength='64' placeholder='vide = conserver le mot de passe memorise'>";
-  c += "<div class='small' style='margin-top:12px;padding:12px;background:#0e1115;border:1px solid #343c46;border-radius:10px'>";
+  c += "<div class='small' style='margin-top:12px;padding:12px;background:#f4f5f9;border:0;border-radius:14px'>";
   c += "<b>ACCES AU BOITIER</b><br>";
   c += "Direct : <b>";
   c += htmlEscape(String(config.apSSID));
@@ -3385,7 +3367,7 @@ void sendSettingsPage() {
       c += "<div class='wifiname'>";
       c += htmlEscape(String(config.knownWiFi[k].ssid));
       c += "</div><div class='wifimeta'>Mot de passe memorise dans l ESP</div></div>";
-      c += "<button type='button' style='min-height:38px;padding:6px 10px;background:#7d1d1d;color:#fff' onclick='forgetWiFi(";
+      c += "<button type='button' style='min-height:38px;padding:6px 10px;background:#fff0f0;color:#b3434a' onclick='forgetWiFi(";
       c += String(k);
       c += ")'>OUBLIER</button></div>";
 
@@ -3416,14 +3398,14 @@ void sendSettingsPage() {
 
   c += "</div>";
   c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px' href='/diagnostics'>DIAGNOSTIC</a>";
-  c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px;background:#30363d;color:#f4f3ee;border-color:#454d57' href='/config/export'>EXPORTER LA CONFIGURATION</a>";
+  c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px;background:#eef1f8;color:#405d88' href='/config/export'>EXPORTER LA CONFIGURATION</a>";
   c += "<div class='filebox' style='margin-top:12px'>";
   c += "<label style='margin-top:0'>Restaurer une configuration</label>";
   c += "<div class='small'>Le fichier de backup contient aussi les mots de passe Wi-Fi.</div>";
   c += "<form method='POST' action='/config/import' enctype='multipart/form-data'>";
   c += "<input type='file' name='backup' accept='.cfg,application/octet-stream'>";
   c += "<button class='save' type='submit'>IMPORTER LE BACKUP</button></form></div>";
-  c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px;background:#30363d;color:#f4f3ee;border-color:#454d57' href='/firmware'>METTRE À JOUR LE BOÎTIER</a>";
+  c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px;background:#eef1f8;color:#405d88' href='/firmware'>METTRE À JOUR LE BOÎTIER</a>";
   c += "<div class='small' style='margin-top:7px'>Charge un fichier .bin compile pour cet ESP8266.</div>";
   c += "<button type='button' class='direct' style='width:100%;margin-top:12px' onclick='startupTest()'>TEST ANIMATION DEMARRAGE</button>";
   c += "<button type='button' class='danger' onclick='rebootDevice()'>REDÉMARRER LE BOÎTIER</button>";
@@ -3474,8 +3456,8 @@ void sendMacroSettingsPage(uint8_t i) {
 
   c += String(i + 1);
   c += "</title>";
-  c += "<style>html,body{margin:0;background:#090b0e;color:#f4f6f8}</style>";
-  c += "<link rel='stylesheet' href='/style.css?v=310'></head><body>";
+  c += "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>";
+  c += "<link rel='stylesheet' href='/style.css?v=311'></head><body>";
   c += "<header class='top'><div class='title macro-title'>Émission ";
   c += String(i + 1);
   c += " — ";
@@ -3500,7 +3482,7 @@ void sendMacroSettingsPage(uint8_t i) {
 
   c.reserve(2100);
   c = "<section class='fieldgroup'>";
-  c += "<h3>01 / En direct</h3><p>La signature lumineuse de cette émission.</p><div class='grid2'>";
+  c += "<h3>En direct</h3><p>La signature lumineuse de cette émission.</p><div class='grid2'>";
   c += "<div><label>Couleur DIRECT</label><input id='directColor' type='color' value='";
   c += rgbToHex(m.r,m.g,m.b);
   c += "' oninput=\"preview('direct');scheduleSave()\" onchange='saveNow()'></div>";
@@ -3516,7 +3498,7 @@ void sendMacroSettingsPage(uint8_t i) {
 
   c.reserve(2200);
   c = "<section class='fieldgroup'>";
-  c += "<h3>02 / Hors direct</h3><label>";
+  c += "<h3>Hors direct</h3><label>";
   c += "<input id='idleOff' type='checkbox' style='width:auto;margin-right:8px'";
 
   if (m.idleOff) c += " checked";
@@ -3539,7 +3521,7 @@ void sendMacroSettingsPage(uint8_t i) {
 
   c.reserve(2500);
   c = "<section class='fieldgroup'>";
-  c += "<h3>03 / Avant le direct</h3><p>Une séquence d’alerte, puis le passage automatique en DIRECT.</p>";
+  c += "<h3>Alerte</h3><p>Une séquence d’alerte, puis le passage automatique en DIRECT.</p>";
   c += "<label>Animation</label><select id='alertAnimation' onchange='updateAnimationHelp();saveNow()'>";
 
   c += "<option value='0'";
@@ -4690,8 +4672,8 @@ void sendDiagnosticsPage() {
     "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>Diagnostic</title>"
-    "<style>html,body{margin:0;background:#090b0e;color:#f4f6f8}</style>"
-    "<link rel='stylesheet' href='/style.css?v=310'></head><body>"
+    "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>"
+    "<link rel='stylesheet' href='/style.css?v=311'></head><body>"
     "<header class='top'><div class='title'>Diagnostic</div>"
     "<a class='iconbtn' href='/settings#system'>← Système</a></header>"
     "<div class='wrap'>"
@@ -4787,9 +4769,9 @@ void sendDiagnosticsPage() {
 static const char FIRMWARE_PAGE[] PROGMEM = R"FWPAGE(
 <!doctype html><html lang='fr'><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Mise à jour · ON AIR</title><link rel='stylesheet' href='/style.css?v=310'>
+<title>Mise à jour · ON AIR</title><link rel='stylesheet' href='/style.css?v=311'>
 </head><body><header class='top'><div class='title'>Mise à jour</div><a class='iconbtn' href='/settings#system'>← Système</a></header>
-<main class='wrap'><div class='settings-intro'><span class='eyebrow'>Maintenance</span><h1>La suite, simplement.</h1><p>Installez une nouvelle version en quelques instants.</p></div>
+<main class='wrap'><div class='settings-intro'><span class='eyebrow'>Maintenance</span><h1>Mise à jour</h1><p>Installez une nouvelle version en quelques instants.</p></div>
 <section class='section'><h2>Installer un firmware</h2><p>Choisissez le fichier ON_AIR_ESP8266_OTA.bin. Vos émissions, logos et connexions sont conservés lors d’une mise à jour compatible.</p>
 <form id='updateForm' method='POST' action='/update' enctype='multipart/form-data'><label for='firmwareFile'>Fichier de mise à jour</label>
 <input id='firmwareFile' type='file' name='firmware' accept='.bin,.bin.gz' required>

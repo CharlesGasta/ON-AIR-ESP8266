@@ -30,12 +30,16 @@ const initial=()=>({output_enabled:false,alert_running:false,alert_visible:false
  await page.goto('http://onair.test/');await page.waitForFunction(()=>document.getElementById('connection').dataset.state==='online');
  assert.equal(await page.locator('.card').count(),4);
  assert(await page.locator('#direct-0').isEnabled());assert(await page.locator('#alert-0').isEnabled());
- await page.screenshot({path:path.join(dir,'mobile-console.png'),fullPage:true});
+ await page.waitForTimeout(350);
+ await page.screenshot({path:path.join(dir,'mobile-console.png'),fullPage:true,animations:'disabled'});
  for(const width of [320,390,430,768,1440]){await page.setViewportSize({width,height:900});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`overflow at ${width}`);}
  await page.setViewportSize({width:390,height:844});
  await page.click('#direct-0');await page.waitForFunction(()=>document.body.dataset.mode==='live');
  assert.equal(await page.locator('#direct-0').getAttribute('aria-pressed'),'true');assert(await page.locator('#direct-1').isDisabled());
- await page.screenshot({path:path.join(dir,'mobile-live.png'),fullPage:true});
+ await page.waitForFunction(()=>!commandBusy);await page.waitForTimeout(350);
+ assert.equal(await page.locator('#macro-0').getAttribute('data-active'),'true');
+ assert.equal(await page.locator('#direct-0').evaluate(n=>getComputedStyle(n).opacity),'1');
+ await page.screenshot({path:path.join(dir,'mobile-live.png'),fullPage:true,animations:'disabled'});
  await page.click('#direct-0');await page.waitForFunction(()=>document.body.dataset.mode==='idle');
  await page.click('#alert-1');await page.waitForFunction(()=>document.body.dataset.mode==='alert');assert(await page.locator('#direct-0').isDisabled());
  await page.click('#offBtn');await page.waitForFunction(()=>document.body.dataset.mode==='idle');assert.equal(state.active_macro,-1);
