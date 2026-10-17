@@ -34,7 +34,7 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.3.1 CUES 36LED 100PCT"
+#define FIRMWARE_VERSION "3.3.2 CUES 36LED 100PCT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -2812,6 +2812,9 @@ button{display:inline-flex;align-items:center;justify-content:center;gap:8px;bor
 [data-theme=dark] .danger{background:#38232b;color:#f3b2b7}[data-theme=dark] .autosave{background:#20312a;color:#8ac9a2}[data-theme=dark] .feedback{color:#edbe80}[data-theme=dark] .connection[data-state=online]{color:#8cbd9e}[data-theme=dark] .connection[data-state=offline]{color:#e2b679}
 
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition:none!important;animation:none!important}}
+
+#animations h2{margin-bottom:6px}.animation-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:17px 0;border-bottom:1px solid var(--line)}.animation-row:last-child{border-bottom:0;padding-bottom:0}.animation-emission{display:flex;align-items:center;gap:12px;min-width:0}.animation-emission>span{font-size:15px;font-weight:550;letter-spacing:-.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.animation-logo{width:38px;height:38px;object-fit:contain;border-radius:10px;flex-shrink:0}.animation-actions{display:flex;gap:8px;flex-shrink:0}.animation-actions a{display:inline-flex;align-items:center;justify-content:center;gap:13px;min-height:42px;padding:10px 15px;border-radius:14px;font-size:13px;font-weight:550;text-decoration:none;line-height:1.2}.animation-actions a>span{font-size:15px;opacity:.55}.animation-direct{background:#edf0fa;color:#455b94}.animation-alert{background:#fff1da;color:#956317}[data-theme=dark] .animation-direct{background:#282f44;color:#bdccee}[data-theme=dark] .animation-alert{background:#3a3021;color:#efc584}.animation-actions a:active{opacity:.7}.editor-link .save{align-items:center;justify-content:center;text-align:center;padding:12px 16px;line-height:1.4}
+@media(max-width:380px){.animation-row{gap:10px}.animation-emission{gap:9px}.animation-emission>span{font-size:13px}.animation-logo{width:30px;height:30px}.animation-actions{gap:6px}.animation-actions a{padding:10px 11px;gap:7px;font-size:12px}}
 )CSS";
 
 
@@ -3463,9 +3466,13 @@ void sendSettingsPage() {
   sendHtmlChunk("</section>");
   sendHtmlChunk("<section id='animations' class='section'><h2>Éditeur d’animation</h2>");
   for(uint8_t i=0;i<MACRO_COUNT;i++){
-    c="<h3>";c+=htmlEscape(String(config.macro[i].name));c+="</h3><div class='grid2'>";
-    c+="<a class='save' href='/animation?i=";c+=String(i);c+="'>DIRECT</a>";
-    c+="<a class='save' href='/animation?i=";c+=String(i);c+="&amp;kind=alert'>ALERTE</a></div>";
+    c="<div class='animation-row'><div class='animation-emission'>";
+    if(logoAvailable(i)){
+      c+="<img class='animation-logo' alt='' src='/logo?i=";c+=String(i);c+="'>";
+    }
+    c+="<span>";c+=htmlEscape(String(config.macro[i].name));c+="</span></div><div class='animation-actions'>";
+    c+="<a class='animation-direct' href='/animation?i=";c+=String(i);c+="' aria-label='Éditer le direct de ";c+=htmlEscape(String(config.macro[i].name));c+="'>Direct <span aria-hidden='true'>↗</span></a>";
+    c+="<a class='animation-alert' href='/animation?i=";c+=String(i);c+="&amp;kind=alert' aria-label='Éditer l’alerte de ";c+=htmlEscape(String(config.macro[i].name));c+="'>Alerte <span aria-hidden='true'>↗</span></a></div></div>";
     sendHtmlChunk(c);c="";
   }
   sendHtmlChunk("</section>");
