@@ -41,7 +41,7 @@ using std::size_t;
 '''
 stubs=r'''
 static uint8_t customData[1356];static int customOwner=-1;static bool customValid=false,customPreview=false,customPreviewAlert=false;
-bool libraryPreviewActive=false,libraryPreviewPlaying=false;uint8_t libraryPreviewCue=0;unsigned long libraryPreviewStarted=0,libraryPreviewLastFrame=0,settingsPreviewUntil=0;char libraryPreviewToken[41]={};
+bool libraryPreviewActive=false,libraryPreviewPlaying=false;uint8_t libraryPreviewCue=0;unsigned long libraryPreviewStarted=0,libraryPreviewLastFrame=0,settingsPreviewUntil=0;char libraryPreviewToken[41]={},libraryPreviewRevokedToken[41]={};
 bool otaVisualActive=false;unsigned long otaVisualLastFrame=0,otaErrorUntil=0;
 uint32_t clockMs=0;uint32_t millis(){return clockMs;}
 int activeMacro=-1,alertMacro=-1;

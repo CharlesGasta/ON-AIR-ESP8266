@@ -2389,7 +2389,7 @@ static bool customPreviewAlert=false;
 static bool libraryPreviewActive=false,libraryPreviewPlaying=false;
 static uint8_t libraryPreviewCue=0;
 static unsigned long libraryPreviewStarted=0,libraryPreviewLastFrame=0;
-static char libraryPreviewToken[41]={};
+static char libraryPreviewToken[41]={},libraryPreviewRevokedToken[41]={};
 
 uint16_t customWord(const uint8_t* p){return p[0]|((uint16_t)p[1]<<8);}
 bool validCustom(const uint8_t* p){
@@ -2767,6 +2767,7 @@ void updateAlert() {
 }
 
 void showMacroPreview(uint8_t i, bool directState) {
+  if(libraryPreviewActive)strncpy(libraryPreviewRevokedToken,libraryPreviewToken,40);
   libraryPreviewActive=false;libraryPreviewToken[0]=0;customOwner=-1;
   customPreview=false;
   if (i >= MACRO_COUNT || alertRunning) return;
@@ -5183,13 +5184,14 @@ void handleLibraryDelete(){
 }
 void stopLibraryPreview(){
   if(!libraryPreviewActive)return;
+  strncpy(libraryPreviewRevokedToken,libraryPreviewToken,40);
   libraryPreviewActive=false;libraryPreviewToken[0]=0;
   if(settingsPreviewActive){settingsPreviewActive=false;renderCurrentOutput();}
   customOwner=-1;
 }
 void updateLibraryPreview(){
   if(!libraryPreviewActive)return;
-  if(!settingsPreviewActive||customOwner!=-2){libraryPreviewActive=false;libraryPreviewToken[0]=0;customOwner=-1;return;}
+  if(!settingsPreviewActive||customOwner!=-2){strncpy(libraryPreviewRevokedToken,libraryPreviewToken,40);libraryPreviewActive=false;libraryPreviewToken[0]=0;customOwner=-1;return;}
   if((long)(millis()-settingsPreviewUntil)>=0){stopLibraryPreview();return;}
   if(millis()-libraryPreviewLastFrame<33UL)return;
   libraryPreviewLastFrame=millis();
@@ -5201,7 +5203,8 @@ void updateLibraryPreview(){
 void handleLibraryPreview(){
   String token=server.arg("token");
   if(!token.length()||token.length()>40){server.send(400,"text/plain","Session invalide");return;}
-  if(libraryPreviewActive&&!settingsPreviewActive){libraryPreviewActive=false;libraryPreviewToken[0]=0;customOwner=-1;}
+  if(libraryPreviewActive&&!settingsPreviewActive){strncpy(libraryPreviewRevokedToken,libraryPreviewToken,40);libraryPreviewActive=false;libraryPreviewToken[0]=0;customOwner=-1;}
+  if(token==libraryPreviewRevokedToken){server.send(409,"text/plain","Aperçu interrompu. Réactivez l’interrupteur pour reprendre.");return;}
   if(libraryPreviewActive&&token!=libraryPreviewToken){server.send(409,"text/plain","Un autre aperçu est déjà actif");return;}
   if(outputEnabled||alertRunning){server.send(409,"text/plain","Arrêtez le direct ou l’alerte avant d’activer l’aperçu.");return;}
   uint8_t data[1356];if(!decodeCueRequest(data)){server.send(400,"text/plain","Séquence invalide");return;}
@@ -5228,7 +5231,8 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 .editor-meta label{margin-top:0}.editor-meta #animationName{margin-bottom:18px}.editor-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}.preview-switch{display:flex!important;align-items:center;gap:10px;margin:0!important;font-size:13px!important;line-height:1.3;cursor:pointer}.preview-switch input{appearance:none;-webkit-appearance:none;position:relative;width:44px!important;min-width:44px;min-height:26px!important;height:26px!important;border:0!important;border-radius:20px!important;background:#c3c7d3!important;cursor:pointer}.preview-switch input:checked{background:#4669e8!important}.preview-switch input:before{content:'';position:absolute;width:20px;height:20px;border-radius:50%;background:white;left:3px;top:3px;transition:transform .15s}.preview-switch input:checked:before{transform:translateX(18px)}.editor .status{margin:12px 0 0;min-height:18px}.playbar{display:flex;justify-content:center;margin:14px 0 20px}.playbar button{background:var(--panel);color:var(--text);border:1px solid var(--line);padding:10px 20px}.library-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.library-heading h2{font-size:20px;margin:0}.library-heading h2 span{font-size:12px;color:var(--muted);font-weight:400}.library-heading button{background:transparent;color:var(--text);padding:7px 10px;font-size:13px}.library-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}.library-row:last-child{border:0}.library-select{flex:1;min-width:0;justify-content:flex-start;text-align:left;background:transparent;color:var(--text);padding:8px 0;font-size:14px}.library-select span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.library-select:before{content:'○';color:var(--muted);font-size:21px}.library-select[aria-pressed=true]:before{content:'✓';color:#6489ff}.library-delete{width:40px;min-width:40px;min-height:40px!important;padding:0;border-radius:12px;background:#ff525215;color:#e65b64;font-size:24px}.library-empty{font-size:13px;color:var(--muted);padding:16px 0}.editor-meta .primary{white-space:nowrap;padding:10px 16px}.editor .editor-meta input[type=text]{font-size:16px}.editor-meta .preview-switch span{max-width:130px}@media(max-width:350px){.editor-toolbar{align-items:stretch;flex-direction:column}.editor-meta .preview-switch span{max-width:none}.editor-meta .preview-switch{justify-content:space-between;padding:6px 0}}
 </style><main class="editor"><a id="back" href="/settings">← Retour</a><h1>Éditeur d’animation</h1><section class="section editor-meta"><label for="animationName">Nom de l’animation</label><input id="animationName" type="text" maxlength="32" placeholder="Ex. Alerte studio" autocomplete="off"><div class="editor-toolbar"><label class="preview-switch"><input id="physicalPreview" type="checkbox" role="switch"><span>Aperçu sur le boîtier</span></label><button id="save" class="primary">Enregistrer</button></div><p class="status" id="status" role="status" aria-live="polite"></p></section><div class="board" id="board"><strong>ON AIR</strong></div><div class="bar" id="groups"></div><div class="playbar"><button id="play">Lire la séquence</button></div><section class="section"><div class="bar"><input aria-label="Couleur des LED sélectionnées" id="color" type="color" value="#ff0000"><div class="bar" id="palette"></div></div><p class="small" id="selection"></p><div class="cues" id="cues"></div><div class="bar"><button id="add">+ Étape</button><button id="duplicate">Dupliquer</button><button id="remove">Supprimer</button><button id="earlier" aria-label="Déplacer avant">←</button><button id="later" aria-label="Déplacer après">→</button></div><div class="grid2"><div><label for="hold">Maintien (secondes)</label><input id="hold" type="number" min="0.1" max="60" step="0.1" value="1"></div><div><label for="transition">Transition vers cette étape</label><select id="transition"><option value="cut">Directe</option><option value="fade">Fondu</option></select></div><div><label for="fade">Fondu (secondes)</label><input id="fade" type="number" min="0.1" max="20" step="0.1" value="1" disabled></div></div><p class="small">12 étapes maximum · Maintien et fondu par étape.</p><div class="bar"><button id="export">Exporter</button><button id="import">Importer</button><input id="file" type="file" accept=".onair" hidden></div></section><section class="section"><div class="library-heading"><h2>Mes animations <span id="libraryCount"></span></h2><button id="newAnimation">+ Nouvelle</button></div><div id="libraryList"></div><p class="small">Disponibles dans les menus Direct et Alerte de toutes les émissions.</p></section></main><script>
 'use strict';
-const $=id=>document.getElementById(id),token=crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
+const $=id=>document.getElementById(id),makeToken=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
+let token=makeToken(),previewVersion=0;
 $('back').href='/settings#animations';
 let library=[],editingId=null,saving=false,loading=false,previewTimer=0,previewQueue=Promise.resolve(),previewFailed=false;
 let cues=[{hold:1000,fade:0,rgb:Array(108).fill(0)}],current=0,selected=new Set(Array.from({length:36},(_,n)=>n)),dirty=false,playing=false,started=0;
@@ -5300,27 +5304,29 @@ async function deleteAnimation(item){
 function previewError(e){$('physicalPreview').checked=false;previewFailed=true;clearTimeout(previewTimer);$('status').textContent='Aperçu arrêté : '+e.message;}
 function queuePreview(){
   clearTimeout(previewTimer);if(!$('physicalPreview').checked)return;
+  const version=previewVersion;
   previewTimer=setTimeout(()=>{
     previewQueue=previewQueue.catch(()=>{}).then(async()=>{
-      if(!$('physicalPreview').checked)return;
+      if(!$('physicalPreview').checked||version!==previewVersion)return;
       const body=new URLSearchParams({token,data:hexData(),cue:current,play:playing?'1':'0',elapsed:playing?Math.floor(performance.now()-started):0});
-      try{await request('/api/library/preview',{method:'POST',body});}catch(e){previewError(e);}
+      try{await request('/api/library/preview',{method:'POST',body});}catch(e){if(version===previewVersion)previewError(e);}
     });
   },100);
 }
 async function stopPhysicalPreview(){
-  clearTimeout(previewTimer);$('physicalPreview').checked=false;
-  await previewQueue.catch(()=>{});await request('/api/library/preview/stop',{method:'POST',body:new URLSearchParams({token})});
+  const stoppedToken=token;previewVersion++;clearTimeout(previewTimer);$('physicalPreview').checked=false;
+  await previewQueue.catch(()=>{});await request('/api/library/preview/stop',{method:'POST',body:new URLSearchParams({token:stoppedToken})});
 }
 $('physicalPreview').onchange=action(async()=>{
-  if($('physicalPreview').checked){previewFailed=false;queuePreview();$('status').textContent='Aperçu sur le boîtier activé';}
+  if($('physicalPreview').checked){token=makeToken();previewVersion++;previewFailed=false;queuePreview();$('status').textContent='Aperçu sur le boîtier activé';}
   else{await stopPhysicalPreview();$('status').textContent='Aperçu sur le boîtier désactivé';}
 });
 setInterval(()=>{
   if(!$('physicalPreview').checked)return;
+  const version=previewVersion,pingToken=token;
   previewQueue=previewQueue.catch(()=>{}).then(async()=>{
-    if(!$('physicalPreview').checked)return;
-    try{await request('/api/library/preview/ping',{method:'POST',body:new URLSearchParams({token})});}catch(e){previewError(e);}
+    if(!$('physicalPreview').checked||version!==previewVersion)return;
+    try{await request('/api/library/preview/ping',{method:'POST',body:new URLSearchParams({token:pingToken})});}catch(e){if(version===previewVersion)previewError(e);}
   });
 },1000);
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&$('physicalPreview').checked){stop();stopPhysicalPreview().catch(previewError);}});
