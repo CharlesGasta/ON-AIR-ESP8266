@@ -2,6 +2,16 @@
 
 Contrôleur **ON AIR RGB autonome** basé sur ESP8266 / NodeMCU 1.0 (ESP-12E), avec interface Web mobile.
 
+## V3.5.0 — Atelier d’animations
+
+Palette de 13 couleurs, intensité de séquence mémorisée, banque de modèles et copie d’animations enregistrées. Chaque étape peut utiliser des couleurs LED, un chenillard à points de départ/arrivée et intervalle réglables, ou un flash/strobe sur une sélection. Le grand ON AIR simule la diffusion lumineuse du boîtier ; les 36 zones de clic sont vérifiées en souris et tactile.
+
+Contour progressif : un tour allumé puis un tour éteint. Balayages aller-retour regroupés par axe, sans allumer les faces qui brouillent le mouvement. Les effets classiques, l’arc-en-ciel et la cinématique de démarrage sont conservés.
+
+[Guide de l’éditeur](docs/ANIMATION_STUDIO.md) · [Notes de version](docs/releases/v3.5.0.md).
+
+Les paramètres et anciennes séquences restent lisibles. Les nouvelles séquences CUE1 v2 nécessitent un firmware 3.5.0 ou ultérieur. Le délai de sécurité de l’aperçu est de 15 secondes depuis la v3.4.3. La RAM statique mesurée reste à 39924 octets, identique à la v3.4.3. La validation physique des nouvelles animations reste à effectuer après OTA.
+
 ## V3.4.1 — OTA silencieuse et vérifiée
 
 La mise à jour n’anime plus le ruban : extinction avant l’écriture, suspension des effets pendant le transfert. Le serveur contrôle la taille exacte et l’empreinte MD5, répond au navigateur après validation, puis redémarre 1,8 seconde plus tard.
@@ -14,7 +24,7 @@ Détails : [notes v3.4.1](docs/releases/v3.4.1.md).
 
 Un seul accès **Réglages → Éditeur d’animation**. Donner un nom puis Enregistrer crée une animation disponible par son nom dans les menus Direct et Alerte des quatre émissions. Jusqu’à 16 séquences communes, chacune de 12 étapes. Charger une ligne permet de la modifier ; Nouvelle crée une autre séquence ; la croix rouge supprime la séquence et ses affectations. Les noms vides ou déjà utilisés par une autre séquence sont refusés.
 
-**Aperçu sur le boîtier** est un interrupteur indépendant de l’enregistrement : décoché, le travail reste dans le navigateur ; coché, l’étape choisie, ses couleurs et la lecture locale sont reflétées physiquement. Rien n’est écrit en mémoire permanente par l’aperçu. Il s’arrête à la désactivation ou après 3 s sans renouvellement et ne peut reprendre avec une ancienne session après une commande du boîtier.
+**Aperçu sur le boîtier** est un interrupteur indépendant de l’enregistrement : décoché, le travail reste dans le navigateur ; coché, l’étape choisie, ses couleurs et la lecture locale sont reflétées physiquement. Rien n’est écrit en mémoire permanente par l’aperçu. Il s’arrête à la désactivation ou après 15 s sans renouvellement et ne peut reprendre avec une ancienne session après une commande du boîtier.
 
 Les anciennes séquences Direct/Alerte sont migrées automatiquement avec leurs affectations, sous des noms propres à leur émission d’origine. Le format EEPROM historique reste identique. Les nouveaux noms et couleurs sont enregistrés ensemble de façon atomique ; exporter les fichiers `.onair` pour sauvegarder les séquences séparément du fichier général de configuration.
 
