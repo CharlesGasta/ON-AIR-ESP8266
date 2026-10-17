@@ -5,10 +5,12 @@ on:
     branches: ["main"]
     paths:
       - "ON_AIR_ESP8266.ino"
+      - "tools/**"
       - ".github/workflows/build-firmware.yml"
   pull_request:
     paths:
       - "ON_AIR_ESP8266.ino"
+      - "tools/**"
       - ".github/workflows/build-firmware.yml"
   workflow_dispatch:
 

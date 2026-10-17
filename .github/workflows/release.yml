@@ -5,6 +5,7 @@ on:
     branches: ["main"]
     paths:
       - "ON_AIR_ESP8266.ino"
+      - "tools/**"
       - ".github/workflows/release.yml"
   workflow_dispatch:
 
