@@ -1,5 +1,11 @@
 # Changelog
 
+## V3.3.2 — Menu de l’éditeur
+
+- lignes compactes avec logos, noms lisibles et accès Direct / Alerte centrés
+- teintes sobres clair/sombre et espacement mobile
+- aucun changement du moteur LED, des données enregistrées ou de la logique OTA
+
 ## V3.3.1 — Accès éditeur, alertes, boot et OTA
 
 - navigation Réglages → Éditeur d’animation et liens d’émission rendus visibles

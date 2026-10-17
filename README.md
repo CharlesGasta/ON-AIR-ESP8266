@@ -2,6 +2,12 @@
 
 Contrôleur **ON AIR RGB autonome** basé sur ESP8266 / NodeMCU 1.0 (ESP-12E), avec interface Web mobile.
 
+## V3.3.2 — Menu de l’éditeur épuré
+
+La rubrique Éditeur d’animation présente quatre lignes avec logos et noms d’émission, et deux accès Direct / Alerte compacts et centrés. Teintes distinctes adaptées au clair/sombre et espacement optimisé pour téléphone. Aucun changement des animations ou des réglages sauvegardés.
+
+Détails : [notes v3.3.2](docs/releases/v3.3.2.md).
+
 ## V3.3.1 — Accès à l’éditeur, alertes et signaux de mise à jour
 
 **Réglages → Éditeur d’animation** donne accès aux séquences DIRECT et ALERTE indépendantes de chaque émission. Le lien auparavant masqué dans les réglages d’émission est corrigé. Choisir Animation personnalisée dans le menu DIRECT ou ALERTE correspondant après avoir enregistré la séquence.
