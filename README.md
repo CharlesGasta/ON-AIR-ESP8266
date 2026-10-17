@@ -2,6 +2,14 @@
 
 Contrôleur **ON AIR RGB autonome** basé sur ESP8266 / NodeMCU 1.0 (ESP-12E), avec interface Web mobile.
 
+## V3.3.1 — Accès à l’éditeur, alertes et signaux de mise à jour
+
+**Réglages → Éditeur d’animation** donne accès aux séquences DIRECT et ALERTE indépendantes de chaque émission. Le lien auparavant masqué dans les réglages d’émission est corrigé. Choisir Animation personnalisée dans le menu DIRECT ou ALERTE correspondant après avoir enregistré la séquence.
+
+L’arc-en-ciel du démarrage à froid ne commence qu’après l’initialisation réseau. La mise à jour OTA affiche du jaune pendant l’écriture, deux signaux verts après validation et du rouge en cas d’erreur. Ces signaux seront actifs pour les mises à jour effectuées après installation de cette version.
+
+Détails : [notes v3.3.1](docs/releases/v3.3.1.md). Séquences .onair à exporter séparément pour le DIRECT et l’ALERTE.
+
 ## V3.3.0 — Balayages et éditeur d’animation
 
 Les balayages horizontaux utilisent uniquement le haut et le bas ; les nouveaux balayages verticaux utilisent uniquement les côtés. L’arc-en-ciel et le démarrage approuvés sont inchangés.

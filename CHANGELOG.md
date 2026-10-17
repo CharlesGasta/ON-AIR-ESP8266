@@ -1,5 +1,13 @@
 # Changelog
 
+## V3.3.1 — Accès éditeur, alertes, boot et OTA
+
+- navigation Réglages → Éditeur d’animation et liens d’émission rendus visibles
+- séquences personnalisées ALERTE indépendantes des séquences DIRECT existantes
+- horloge de démarrage lancée après l’initialisation Wi-Fi pour conserver tout l’arc-en-ciel
+- signaux OTA jaune / vert validé / rouge échec, basés sur les callbacks réels du moteur de mise à jour
+- tests de sélection visible, séparation des fichiers, début différé, progression OTA et exclusion des faux succès
+
 ## V3.3.0 — Balayages et cues
 
 - surfaces isolées pour les balayages horizontaux et verticaux
