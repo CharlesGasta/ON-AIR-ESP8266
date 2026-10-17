@@ -26,6 +26,7 @@ jobs:
           python3 tools/check-firmware.py
           python3 tools/check-motion.py
           python3 tools/check-ota.py
+          python3 tools/check-web-memory.py
 
       - uses: arduino/setup-arduino-cli@v2
 
