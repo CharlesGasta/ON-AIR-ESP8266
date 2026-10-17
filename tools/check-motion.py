@@ -27,6 +27,8 @@ types=s[s.index('const uint32_t CONFIG_MAGIC'):s.index('ESP8266WebServer server'
 enum=re.search(r'enum StartupIndicatorState[^}]+};',s).group()
 prefix=r'''
 #include <stdint.h>
+#define F(x) x
+#define PSTR(x) x
 #include <cstdio>
 #include <stddef.h>
 #include <math.h>
@@ -86,6 +88,7 @@ struct {
  void sendHeader(const char*,const char*){}
  void setContentLength(size_t){}
  void send(int,const char*,const char*){exported.clear();}
+ void send_P(int,const char*,const char*){exported.clear();}
  WiFiClient client(){return WiFiClient();}
 } server;
 struct {bool error=false;bool hasError(){return error;}} Update;

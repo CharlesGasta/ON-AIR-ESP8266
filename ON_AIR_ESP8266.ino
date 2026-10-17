@@ -34,7 +34,7 @@
 #include <Updater.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.4.1 OTA 36LED 100PCT"
+#define FIRMWARE_VERSION "3.4.2 MEMORY 36LED 100PCT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -1832,7 +1832,7 @@ void saveConfig() {
   config.magic = CONFIG_MAGIC;
   EEPROM.put(0, config);
   EEPROM.commit();
-  Serial.println("[CONFIG] Sauvegardee");
+  Serial.println(F("[CONFIG] Sauvegardee"));
 }
 
 void copyLegacyMacroToV2(const MacroConfigV19& oldM, MacroConfig& newM) {
@@ -1956,7 +1956,7 @@ void loadConfig() {
     config.magic = CONFIG_MAGIC;
     saveConfig();
 
-    Serial.println("[CONFIG] Migration V2.5 -> V2.6 effectuee");
+    Serial.println(F("[CONFIG] Migration V2.5 -> V2.6 effectuee"));
   }
   else if (magic == LEGACY_CONFIG_MAGIC_V19) {
     ConfigV19 oldConfig;
@@ -1983,7 +1983,7 @@ void loadConfig() {
     config.magic = CONFIG_MAGIC;
     saveConfig();
 
-    Serial.println("[CONFIG] Migration V1.9 -> V2.0 effectuee");
+    Serial.println(F("[CONFIG] Migration V1.9 -> V2.0 effectuee"));
   }
   else if (magic == LEGACY_CONFIG_MAGIC_V18 ||
            magic == LEGACY_CONFIG_MAGIC_V14 ||
@@ -2015,7 +2015,7 @@ void loadConfig() {
     config.magic = CONFIG_MAGIC;
     saveConfig();
 
-    Serial.println("[CONFIG] Migration ancienne version -> V2.0 effectuee");
+    Serial.println(F("[CONFIG] Migration ancienne version -> V2.0 effectuee"));
   }
   else if (magic == LEGACY_CONFIG_MAGIC_V11) {
     ConfigV11 oldConfig;
@@ -2035,7 +2035,7 @@ void loadConfig() {
     config.magic = CONFIG_MAGIC;
     saveConfig();
 
-    Serial.println("[CONFIG] Migration V1.1 -> V2.0 effectuee");
+    Serial.println(F("[CONFIG] Migration V1.1 -> V2.0 effectuee"));
   }
   else {
     setDefaults();
@@ -2508,7 +2508,7 @@ void blackout() {
   outputEnabled = false;
   ledsOff();
 
-  Serial.println("[ON AIR] ETEINT / AUCUNE MACRO SELECTIONNEE");
+  Serial.println(F("[ON AIR] ETEINT / AUCUNE MACRO SELECTIONNEE"));
 }
 
 void startAlert(uint8_t i, bool testMode = false) {
@@ -2577,7 +2577,7 @@ void finishAlert() {
 
   if (wasTest) {
     blackout();
-    Serial.println("[ALERTE TEST] Fin -> TOUT ETEINT");
+    Serial.println(F("[ALERTE TEST] Fin -> TOUT ETEINT"));
     return;
   }
 
@@ -2923,7 +2923,27 @@ renderStatus();scheduleRefresh(0);
 )JS";
 
 
+static uint32_t webMinimumHeap=0,webRefusedPages=0;
+bool webMemoryReady(){
+  uint32_t free=ESP.getFreeHeap();
+  if(!webMinimumHeap||free<webMinimumHeap)webMinimumHeap=free;
+  if(free>=12000&&ESP.getMaxFreeBlockSize()>=6000)return true;
+  webRefusedPages++;
+  server.sendHeader(F("Retry-After"),F("3"));server.sendHeader(F("Connection"),F("close"));
+  server.send_P(503,PSTR("text/plain; charset=utf-8"),PSTR("Mémoire temporairement insuffisante. Réessayez dans quelques secondes, ou ouvrez /health."));
+  return false;
+}
+void sendHtmlFlash(PGM_P text){server.sendContent_P(text);yield();}
+void handleHealth(){
+  char response[240];
+  uint32_t heap=ESP.getFreeHeap();if(!webMinimumHeap||heap<webMinimumHeap)webMinimumHeap=heap;
+  snprintf(response,sizeof(response),"{\"version\":\"%s\",\"uptime_ms\":%lu,\"heap\":%lu,\"min_heap\":%lu,\"max_block\":%lu,\"free_stack\":%lu,\"refused_pages\":%lu,\"reset_reason\":%u}",
+    FIRMWARE_VERSION,millis(),heap,webMinimumHeap,ESP.getMaxFreeBlockSize(),ESP.getFreeContStack(),webRefusedPages,ESP.getResetInfoPtr()->reason);
+  server.sendHeader(F("Cache-Control"),F("no-store"));server.send(200,"application/json",response);
+}
+
 void sendControlPage() {
+  if(!webMemoryReady())return;
   Serial.println(
     "[WEB] GET / stream | heap=" + String(ESP.getFreeHeap()) +
     " | maxblock=" + String(ESP.getMaxFreeBlockSize())
@@ -2946,28 +2966,26 @@ void sendControlPage() {
   String chunk;
   chunk.reserve(1200);
 
-  chunk =
-    "<!doctype html><html lang='fr'><head>"
+  chunk = F("<!doctype html><html lang='fr'><head>"
     "<meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'>"
-    "<title>";
+    "<title>");
 
   chunk += htmlEscape(config.deviceName);
 
-  chunk +=
-    "</title>"
+  chunk += F("</title>"
     "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>"
     "<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=320'>"
     "</head><body class='control' data-mode='unknown'>"
-    "<header class='top control-top'><div><h1 class='title'>";
+    "<header class='top control-top'><div><h1 class='title'>");
   chunk += htmlEscape(config.deviceName);
-  chunk += "</h1><span id='connection' class='connection' data-state='offline'>Connexion…</span></div>"
+  chunk += F("</h1><span id='connection' class='connection' data-state='offline'>Connexion…</span></div>"
     "<a class='iconbtn settings-button' href='/settings' aria-label='Réglages'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='m9.5 3-.6 2.1-1.7 1-2.2-.5-2.5 4.3L4.1 12l-1.6 2.1L5 18.4l2.2-.5 1.7 1 .6 2.1h5l.6-2.1 1.7-1 2.2.5 2.5-4.3L19.9 12l1.6-2.1L19 5.6l-2.2.5-1.7-1-.6-2.1Z'/><circle cx='12' cy='12' r='3.2'/></svg></a></header>"
     "<main class='wrap'><div id='status' class='sr-only' role='status' aria-live='polite'></div>"
-    "<div id='alertbar' class='sr-only' hidden></div><div class='macro-grid'>";
+    "<div id='alertbar' class='sr-only' hidden></div><div class='macro-grid'>");
 
   server.sendContent(chunk);
-  chunk = "";
+  chunk = F("");
 
   // Chaque macro est envoyee separement.
   // La RAM necessaire reste donc tres faible et constante.
@@ -2979,62 +2997,62 @@ void sendControlPage() {
 
     chunk.reserve(1500);
 
-    chunk = "<section class='card' id='macro-";
+    chunk = F("<section class='card' id='macro-");
     chunk += String(i);
-    chunk += "' style='--channel:";
+    chunk += F("' style='--channel:");
     chunk += directColor;
-    chunk += ";--wash:";
+    chunk += F(";--wash:");
     chunk += directColor;
-    chunk += "16'><div class='macrohead'>";
+    chunk += F("16'><div class='macrohead'>");
 
     if (logoAvailable(i)) {
-      chunk += "<img class='logo' src='/logo?i=";
+      chunk += F("<img class='logo' src='/logo?i=");
       chunk += String(i);
-      chunk += "' alt='' decoding='async'>";
+      chunk += F("' alt='' decoding='async'>");
     } else {
-      chunk += "<div class='nologo' aria-hidden='true'>";
-      chunk += "•";
-      chunk += "</div>";
+      chunk += F("<div class='nologo' aria-hidden='true'>");
+      chunk += F("•");
+      chunk += F("</div>");
     }
 
-    chunk += "<div class='mname'><h2>";
+    chunk += F("<div class='mname'><h2>");
     chunk += htmlEscape(String(m.name));
-    chunk += "</h2><div class='meta'>";
+    chunk += F("</h2><div class='meta'>");
 
-    chunk += "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' aria-hidden='true'><circle cx='12' cy='12' r='4'/><path d='M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5'/></svg>";
+    chunk += F("<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' aria-hidden='true'><circle cx='12' cy='12' r='4'/><path d='M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5'/></svg>");
     chunk += String(m.intensity);
-    chunk += " %</div></div></div>";
+    chunk += F(" %</div></div></div>");
 
-    chunk += "<div class='actions'>";
+    chunk += F("<div class='actions'>");
 
-    chunk += "<button id='direct-";
+    chunk += F("<button id='direct-");
     chunk += String(i);
-    chunk += "' type='button' class='direct' disabled aria-pressed='false' data-color='";
+    chunk += F("' type='button' class='direct' disabled aria-pressed='false' data-color='");
     chunk += directColor;
-    chunk += "' onclick='directMacro(";
+    chunk += F("' onclick='directMacro(");
     chunk += String(i);
-    chunk += ")'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' aria-hidden='true'><circle cx='12' cy='12' r='3' fill='currentColor' stroke='none'/><path d='M7 7a7 7 0 0 0 0 10M17 7a7 7 0 0 1 0 10M4 4a11.3 11.3 0 0 0 0 16M20 4a11.3 11.3 0 0 1 0 16'/></svg><span id='direct-label-";
+    chunk += F(")'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' aria-hidden='true'><circle cx='12' cy='12' r='3' fill='currentColor' stroke='none'/><path d='M7 7a7 7 0 0 0 0 10M17 7a7 7 0 0 1 0 10M4 4a11.3 11.3 0 0 0 0 16M20 4a11.3 11.3 0 0 1 0 16'/></svg><span id='direct-label-");
     chunk += String(i);
-    chunk += "'>Direct</span></button>";
+    chunk += F("'>Direct</span></button>");
 
-    chunk += "<button id='alert-";
+    chunk += F("<button id='alert-");
     chunk += String(i);
-    chunk += "' type='button' class='alert' disabled aria-pressed='false' data-color='";
+    chunk += F("' type='button' class='alert' disabled aria-pressed='false' data-color='");
     chunk += directColor;
-    chunk += "' data-idle-color='";
+    chunk += F("' data-idle-color='");
     chunk += idleColor;
-    chunk += "' data-idle-off='";
+    chunk += F("' data-idle-off='");
     chunk += (m.idleOff ? "1" : "0");
-    chunk += "' onclick='alertMacro(";
+    chunk += F("' onclick='alertMacro(");
     chunk += String(i);
-    chunk += ")'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4'/></svg><span id='alert-label-";
+    chunk += F(")'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4'/></svg><span id='alert-label-");
     chunk += String(i);
-    chunk += "'>Alerte</span></button>";
+    chunk += F("'>Alerte</span></button>");
 
-    chunk += "</div></section>";
+    chunk += F("</div></section>");
 
     server.sendContent(chunk);
-    chunk = "";
+    chunk = F("");
 
     yield();
   }
@@ -3046,12 +3064,13 @@ void sendControlPage() {
     "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-linecap='round' aria-hidden='true'><path d='M12 3v9M6.4 5.4a9 9 0 1 0 11.2 0'/></svg>OFF</button></div></footer>"
   );
 
+  chunk=String();
   server.sendContent_P(CONTROL_PAGE_JS);
 
-  server.sendContent("</body></html>");
+  server.sendContent_P(PSTR("</body></html>"));
 
   // Termine explicitement la reponse chunked.
-  server.sendContent("");
+  server.sendContent_P(PSTR(""));
 
   }
 
@@ -3394,7 +3413,7 @@ void beginChunkedHtml() {
   server.sendHeader("Pragma","no-cache");
   server.sendHeader("Connection","close");
 
-  server.send(200,"text/html; charset=utf-8","");
+  server.send_P(200,PSTR("text/html; charset=utf-8"),PSTR(""));
 }
 
 void sendHtmlChunk(const String& chunk) {
@@ -3403,7 +3422,7 @@ void sendHtmlChunk(const String& chunk) {
 }
 
 void endChunkedHtml() {
-  server.sendContent("");
+  server.sendContent_P(PSTR(""));
   yield();
 }
 
@@ -3420,6 +3439,7 @@ document.querySelectorAll('input[type=password]').forEach(input=>{const wrap=doc
 )UIJS";
 
 void sendSettingsPage() {
+  if(!webMemoryReady())return;
   Serial.println(
     "[WEB] GET /settings stream | heap=" + String(ESP.getFreeHeap()) +
     " | maxblock=" + String(ESP.getMaxFreeBlockSize())
@@ -3431,8 +3451,7 @@ void sendSettingsPage() {
   String c;
   c.reserve(2200);
 
-  c =
-    "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
+  c = F("<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>Réglages · ON AIR</title>"
     "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>"
@@ -3443,196 +3462,193 @@ void sendSettingsPage() {
     "<main class='wrap'>"
     ""
     "<nav class='jumpnav' aria-label='Rubriques'><a href='#macros'>Émissions</a>"
-    "<a href='#animations'>Éditeur d’animation</a><a href='#general'>Boîtier</a><a href='#network'>Wi-Fi</a><a href='#system'>Système</a></nav>"
-
-    ;
+    "<a href='#animations'>Éditeur d’animation</a><a href='#general'>Boîtier</a><a href='#network'>Wi-Fi</a><a href='#system'>Système</a></nav>");
   sendHtmlChunk(c);
-  c = "";
-  sendHtmlChunk("<section class='section'><h2>Apparence</h2><div class='theme-choice' role='group' aria-label='Thème'>"
+  c = F("");
+  sendHtmlFlash(PSTR("<section class='section'><h2>Apparence</h2><div class='theme-choice' role='group' aria-label='Thème'>"
     "<button type='button' data-theme-choice='light' onclick=\"setTheme('light')\" aria-pressed='false'>☀ Clair</button>"
-    "<button type='button' data-theme-choice='dark' onclick=\"setTheme('dark')\" aria-pressed='false'>☾ Sombre</button></div></section>");
-  sendHtmlChunk(
+    "<button type='button' data-theme-choice='dark' onclick=\"setTheme('dark')\" aria-pressed='false'>☾ Sombre</button></div></section>"));
+  sendHtmlFlash(PSTR(
     "<section id='macros' class='section settings-macros'><h2>Vos émissions</h2>"
     "<div class='small' style='margin-bottom:12px'>"
     ""
     "</div>"
-  );
+  ));
 
   for (uint8_t i = 0; i < MACRO_COUNT; i++) {
     MacroConfig& m = config.macro[i];
 
     c.reserve(1500);
-    c = "<a href='/macro?i=";
+    c = F("<a href='/macro?i=");
     c += String(i);
-    c += "' style='text-decoration:none;color:inherit'>";
-    c += "<div class='wifirow' style='margin-bottom:8px'>";
-    c += "<div style='display:flex;align-items:center;gap:10px;min-width:0'>";
+    c += F("' style='text-decoration:none;color:inherit'>");
+    c += F("<div class='wifirow' style='margin-bottom:8px'>");
+    c += F("<div style='display:flex;align-items:center;gap:10px;min-width:0'>");
 
     if (logoAvailable(i)) {
-      c += "<img class='logo' style='width:46px;height:46px' alt='' src='/logo?i=";
+      c += F("<img class='logo' style='width:46px;height:46px' alt='' src='/logo?i=");
       c += String(i);
-      c += "'>";
+      c += F("'>");
     } else {
-      c += "<div class='nologo' style='width:46px;height:46px'>LOGO</div>";
+      c += F("<div class='nologo' style='width:46px;height:46px'>LOGO</div>");
     }
 
-    c += "<div style='min-width:0'><div class='wifiname'>";
+    c += F("<div style='min-width:0'><div class='wifiname'>");
     c += htmlEscape(String(m.name));
-    c += "</div><div class='wifimeta'>";
+    c += F("</div><div class='wifimeta'>");
     c += String(m.intensity);
-    c += "%";
+    c += F("%");
 
     if (m.idleOff) {
-      c += " · HORS DIRECT eteint";
+      c += F(" · HORS DIRECT eteint");
     } else {
-      c += " · HORS DIRECT ";
+      c += F(" · HORS DIRECT ");
 
       c += String(m.idleIntensity);
-      c += "%";
+      c += F("%");
     }
 
-    c += "</div></div></div><div style='font-size:26px'>›</div></div></a>";
+    c += F("</div></div></div><div style='font-size:26px'>›</div></div></a>");
 
     sendHtmlChunk(c);
-    c = "";
+    c = F("");
   }
 
-  sendHtmlChunk("</section>");
-  sendHtmlChunk("<section id='animations' class='section'><h2>Éditeur d’animation</h2><p>Créez vos séquences et retrouvez-les dans toutes les émissions.</p><a class='save library-entry' href='/animation'>Ouvrir l’éditeur →</a></section>");
+  sendHtmlFlash(PSTR("</section>"));
+  sendHtmlFlash(PSTR("<section id='animations' class='section'><h2>Éditeur d’animation</h2><p>Créez vos séquences et retrouvez-les dans toutes les émissions.</p><a class='save library-entry' href='/animation'>Ouvrir l’éditeur →</a></section>"));
 
-  c =
-    "<form method='POST' action='/saveGeneral'>"
+  c = F("<form method='POST' action='/saveGeneral'>"
     "<details id='general' class='section'><summary>Identité du boîtier</summary>"
-    "<label>Nom de l'appareil</label><input name='deviceName' maxlength='32' value='";
+    "<label>Nom de l'appareil</label><input name='deviceName' maxlength='32' value='");
 
   c += htmlEscape(config.deviceName);
-  c += "'><label>Nom du Wi-Fi du boîtier</label>";
-  c += "<input name='apSSID' maxlength='32' value='";
+  c += F("'><label>Nom du Wi-Fi du boîtier</label>");
+  c += F("<input name='apSSID' maxlength='32' value='");
   c += htmlEscape(config.apSSID);
-  c += "'><label>Mot de passe Wi-Fi</label>";
-  c += "<input name='apPassword' type='password' minlength='8' maxlength='64' placeholder='laisser vide pour conserver'>";
-  c += "<label><input type='checkbox' name='startupAnimation' value='1' style='width:auto;margin-right:8px'";
+  c += F("'><label>Mot de passe Wi-Fi</label>");
+  c += F("<input name='apPassword' type='password' minlength='8' maxlength='64' placeholder='laisser vide pour conserver'>");
+  c += F("<label><input type='checkbox' name='startupAnimation' value='1' style='width:auto;margin-right:8px'");
 
-  if (config.startupAnimation) c += " checked";
+  if (config.startupAnimation) c += F(" checked");
 
-  c += "> Cinématique et indications Wi-Fi au démarrage</label>";
-  c += "<button class='save' type='submit'>ENREGISTRER LE BOÎTIER</button>";
-  c += "<div class='small' style='margin-top:10px'>Changer le SSID ou le mot de passe redemarre l ESP.</div>";
-  c += "</details></form>";
+  c += F("> Cinématique et indications Wi-Fi au démarrage</label>");
+  c += F("<button class='save' type='submit'>ENREGISTRER LE BOÎTIER</button>");
+  c += F("<div class='small' style='margin-top:10px'>Changer le SSID ou le mot de passe redemarre l ESP.</div>");
+  c += F("</details></form>");
 
   sendHtmlChunk(c);
-  c = "";
+  c = F("");
 
   c.reserve(2500);
-  c =
-    "<form method='POST' action='/saveExternalWiFi'>"
+  c = F("<form method='POST' action='/saveExternalWiFi'>"
     "<details id='network' class='section'><summary>Connexion Wi-Fi externe</summary>"
-    "<label><input id='externalWiFiEnabled' type='checkbox' name='externalWiFiEnabled' value='1' style='width:auto;margin-right:8px'";
+    "<label><input id='externalWiFiEnabled' type='checkbox' name='externalWiFiEnabled' value='1' style='width:auto;margin-right:8px'");
 
-  if (config.externalWiFiEnabled) c += " checked";
+  if (config.externalWiFiEnabled) c += F(" checked");
 
-  c += "> Connecter aussi l ESP a un reseau Wi-Fi externe</label>";
-  c += "<button id='scanWifiBtn' type='button' class='save' style='width:100%;margin-top:10px' onclick='scanWiFi()'>📡 DETECTER LES WI-FI</button>";
-  c += "<div id='wifiScanStatus' class='small' style='margin-top:8px'>Appuie sur le bouton pour rechercher les reseaux 2.4 GHz.</div>";
-  c += "<div id='wifiScanResults' style='margin-top:10px'></div>";
-  c += "<label>SSID du reseau externe</label>";
-  c += "<input id='externalSSID' name='externalSSID' maxlength='32' value='' placeholder='Selectionne un Wi-Fi ci-dessus'>";
-  c += "<label>Mot de passe</label>";
-  c += "<input id='externalPassword' name='externalPassword' type='password' maxlength='64' placeholder='vide = conserver le mot de passe memorise'>";
-  c += "<div class='small' style='margin-top:12px;padding:12px;background:#f4f5f9;border:0;border-radius:14px'>";
-  c += "<b>ACCES AU BOITIER</b><br>";
-  c += "Direct : <b>";
+  c += F("> Connecter aussi l ESP a un reseau Wi-Fi externe</label>");
+  c += F("<button id='scanWifiBtn' type='button' class='save' style='width:100%;margin-top:10px' onclick='scanWiFi()'>📡 DETECTER LES WI-FI</button>");
+  c += F("<div id='wifiScanStatus' class='small' style='margin-top:8px'>Appuie sur le bouton pour rechercher les reseaux 2.4 GHz.</div>");
+  c += F("<div id='wifiScanResults' style='margin-top:10px'></div>");
+  c += F("<label>SSID du reseau externe</label>");
+  c += F("<input id='externalSSID' name='externalSSID' maxlength='32' value='' placeholder='Selectionne un Wi-Fi ci-dessus'>");
+  c += F("<label>Mot de passe</label>");
+  c += F("<input id='externalPassword' name='externalPassword' type='password' maxlength='64' placeholder='vide = conserver le mot de passe memorise'>");
+  c += F("<div class='small' style='margin-top:12px;padding:12px;background:#f4f5f9;border:0;border-radius:14px'>");
+  c += F("<b>ACCES AU BOITIER</b><br>");
+  c += F("Direct : <b>");
   c += htmlEscape(String(config.apSSID));
-  c += "</b> → <b>http://192.168.4.1</b><br>";
-  c += "Via le routeur : <b>http://onair-moc.local</b></div>";
-  c += "<div class='small' style='margin-top:12px'>";
+  c += F("</b> → <b>http://192.168.4.1</b><br>");
+  c += F("Via le routeur : <b>http://onair-moc.local</b></div>");
+  c += F("<div class='small' style='margin-top:12px'>");
 
   if (config.externalWiFiEnabled) {
     if (WiFi.status() == WL_CONNECTED) {
-      c += "Etat : <b style='color:#65d487'>CONNECTE</b><br>";
-      c += "Reseau : <b>";
+      c += F("Etat : <b style='color:#65d487'>CONNECTE</b><br>");
+      c += F("Reseau : <b>");
       c += htmlEscape(WiFi.SSID());
-      c += "</b><br>IP actuelle : <b>";
+      c += F("</b><br>IP actuelle : <b>");
       c += WiFi.localIP().toString();
-      c += "</b>";
+      c += F("</b>");
     } else {
-      c += "Etat : <b style='color:#ffbc42'>ACTIF - EN ATTENTE D UN RESEAU MEMORISE</b>";
+      c += F("Etat : <b style='color:#ffbc42'>ACTIF - EN ATTENTE D UN RESEAU MEMORISE</b>");
     }
   } else {
-    c += "Connexion externe : desactivee";
+    c += F("Connexion externe : desactivee");
   }
 
-  c += "</div>";
-  c += "<button class='save' type='submit'>ENREGISTRER ET CONNECTER</button>";
-  c += "</details></form>";
+  c += F("</div>");
+  c += F("<button class='save' type='submit'>ENREGISTRER ET CONNECTER</button>");
+  c += F("</details></form>");
 
   sendHtmlChunk(c);
-  c = "";
+  c = F("");
 
-  sendHtmlChunk("<details class='section'><summary>Réseaux mémorisés</summary>");
+  sendHtmlFlash(PSTR("<details class='section'><summary>Réseaux mémorisés</summary>"));
 
   if (config.knownWiFiCount == 0) {
-    sendHtmlChunk("<div class='small'>Aucun reseau memorise.</div>");
+    sendHtmlFlash(PSTR("<div class='small'>Aucun reseau memorise.</div>"));
   } else {
-    sendHtmlChunk("<div class='wifilist'>");
+    sendHtmlFlash(PSTR("<div class='wifilist'>"));
 
     for (uint8_t k = 0; k < config.knownWiFiCount; k++) {
       c.reserve(900);
-      c = "<div class='wifirow' style='cursor:default'><div style='min-width:0'>";
-      c += "<div class='wifiname'>";
+      c = F("<div class='wifirow' style='cursor:default'><div style='min-width:0'>");
+      c += F("<div class='wifiname'>");
       c += htmlEscape(String(config.knownWiFi[k].ssid));
-      c += "</div><div class='wifimeta'>Mot de passe memorise dans l ESP</div></div>";
-      c += "<button type='button' style='min-height:38px;padding:6px 10px;background:#fff0f0;color:#b3434a' onclick='forgetWiFi(";
+      c += F("</div><div class='wifimeta'>Mot de passe memorise dans l ESP</div></div>");
+      c += F("<button type='button' style='min-height:38px;padding:6px 10px;background:#fff0f0;color:#b3434a' onclick='forgetWiFi(");
       c += String(k);
-      c += ")'>OUBLIER</button></div>";
+      c += F(")'>OUBLIER</button></div>");
 
       sendHtmlChunk(c);
-      c = "";
+      c = F("");
     }
 
-    sendHtmlChunk("</div>");
+    sendHtmlFlash(PSTR("</div>"));
   }
 
-  sendHtmlChunk("</details>");
+  sendHtmlFlash(PSTR("</details>"));
 
   c.reserve(2300);
-  c = "<details id='system' class='section'><summary>Système & maintenance</summary><div class='small'>";
-  c += "Firmware : ";
+  c = F("<details id='system' class='section'><summary>Système & maintenance</summary><div class='small'>");
+  c += F("Firmware : ");
   c += String(FIRMWARE_VERSION);
-  c += "<br>Wi-Fi autonome : ";
+  c += F("<br>Wi-Fi autonome : ");
   c += htmlEscape(String(config.apSSID));
-  c += "<br>Adresse : http://192.168.4.1";
+  c += F("<br>Adresse : http://192.168.4.1");
 
   if (WiFi.status() == WL_CONNECTED) {
-    c += "<br>Wi-Fi externe : ";
+    c += F("<br>Wi-Fi externe : ");
     c += htmlEscape(WiFi.SSID());
-    c += "<br>IP externe : http://";
+    c += F("<br>IP externe : http://");
     c += WiFi.localIP().toString();
-    c += "<br>Acces stable : http://onair-moc.local";
+    c += F("<br>Acces stable : http://onair-moc.local");
   }
 
-  c += "</div>";
-  c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px' href='/diagnostics'>DIAGNOSTIC</a>";
-  c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px;background:#eef1f8;color:#405d88' href='/config/export'>EXPORTER LA CONFIGURATION</a>";
-  c += "<div class='filebox' style='margin-top:12px'>";
-  c += "<label style='margin-top:0'>Restaurer une configuration</label>";
-  c += "<div class='small'>Le fichier de backup contient aussi les mots de passe Wi-Fi.</div>";
-  c += "<form method='POST' action='/config/import' enctype='multipart/form-data'>";
-  c += "<input type='file' name='backup' accept='.cfg,application/octet-stream'>";
-  c += "<button class='save' type='submit'>IMPORTER LE BACKUP</button></form></div>";
-  c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px;background:#eef1f8;color:#405d88' href='/firmware'>METTRE À JOUR LE BOÎTIER</a>";
-  c += "<div class='small' style='margin-top:7px'>Charge un fichier .bin compile pour cet ESP8266.</div>";
-  c += "<button type='button' class='direct' style='width:100%;margin-top:12px' onclick='startupTest()'>TEST ANIMATION DEMARRAGE</button>";
-  c += "<button type='button' class='danger' onclick='rebootDevice()'>REDÉMARRER LE BOÎTIER</button>";
-  c += "<button type='button' class='danger' onclick='factoryReset()'>RÉINITIALISER LA CONFIGURATION</button>";
-  c += "</details>";
+  c += F("</div>");
+  c += F("<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px' href='/diagnostics'>DIAGNOSTIC</a>");
+  c += F("<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px;background:#eef1f8;color:#405d88' href='/config/export'>EXPORTER LA CONFIGURATION</a>");
+  c += F("<div class='filebox' style='margin-top:12px'>");
+  c += F("<label style='margin-top:0'>Restaurer une configuration</label>");
+  c += F("<div class='small'>Le fichier de backup contient aussi les mots de passe Wi-Fi.</div>");
+  c += F("<form method='POST' action='/config/import' enctype='multipart/form-data'>");
+  c += F("<input type='file' name='backup' accept='.cfg,application/octet-stream'>");
+  c += F("<button class='save' type='submit'>IMPORTER LE BACKUP</button></form></div>");
+  c += F("<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px;background:#eef1f8;color:#405d88' href='/firmware'>METTRE À JOUR LE BOÎTIER</a>");
+  c += F("<div class='small' style='margin-top:7px'>Charge un fichier .bin compile pour cet ESP8266.</div>");
+  c += F("<button type='button' class='direct' style='width:100%;margin-top:12px' onclick='startupTest()'>TEST ANIMATION DEMARRAGE</button>");
+  c += F("<button type='button' class='danger' onclick='rebootDevice()'>REDÉMARRER LE BOÎTIER</button>");
+  c += F("<button type='button' class='danger' onclick='factoryReset()'>RÉINITIALISER LA CONFIGURATION</button>");
+  c += F("</details>");
 
   sendHtmlChunk(c);
-  c = "";
+  c = F("");
 
+  c=String();
   server.sendContent_P(SETTINGS_PAGE_JS);
   server.sendContent_P(UI_ENHANCEMENT_JS);
-  sendHtmlChunk("</main></body></html>");
+  sendHtmlFlash(PSTR("</main></body></html>"));
   endChunkedHtml();
 
   }
@@ -3645,8 +3661,9 @@ void sendSettingsPage() {
 
 
 void sendMacroSettingsPage(uint8_t i) {
+  if(!webMemoryReady())return;
   if (i >= MACRO_COUNT) {
-    server.send(400,"text/plain","Macro invalide");
+    server.send_P(400,PSTR("text/plain"),PSTR("Macro invalide"));
     return;
   }
 
@@ -3664,195 +3681,195 @@ void sendMacroSettingsPage(uint8_t i) {
   String c;
   c.reserve(2200);
 
-  c =
-    "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
+  c = F("<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>Macro ";
+    "<title>Macro ");
 
   c += String(i + 1);
-  c += "</title>";
-  c += "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>";
-  c += "<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=320'></head><body>";
-  c += "<header class='top'><div class='title macro-title'>Émission ";
+  c += F("</title>");
+  c += F("<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>");
+  c += F("<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=320'></head><body>");
+  c += F("<header class='top'><div class='title macro-title'>Émission ");
   c += String(i + 1);
-  c += " — ";
+  c += F(" — ");
   c += htmlEscape(String(m.name));
-  c += "</div><a class='iconbtn' href='/settings#macros'>← Émissions</a></header>";
-  c += "<main class='wrap'><div class='section'>";
+  c += F("</div><a class='iconbtn' href='/settings#macros'>← Émissions</a></header>");
+  c += F("<main class='wrap'><div class='section'>");
 
   if (logoAvailable(i)) {
-    c += "<div style='display:flex;justify-content:center;margin-bottom:14px'>";
-    c += "<img alt='' class='logo' style='width:64px;height:64px' src='/logo?i=";
+    c += F("<div style='display:flex;justify-content:center;margin-bottom:14px'>");
+    c += F("<img alt='' class='logo' style='width:64px;height:64px' src='/logo?i=");
     c += String(i);
-    c += "'></div>";
+    c += F("'></div>");
   }
 
-  c += "<div id='autosave' class='autosave' role='status' aria-live='polite'>Tous les réglages sont enregistrés</div>";
-  c += "<label>Nom de l’émission</label><input id='macroName' maxlength='24' value='";
+  c += F("<div id='autosave' class='autosave' role='status' aria-live='polite'>Tous les réglages sont enregistrés</div>");
+  c += F("<label>Nom de l’émission</label><input id='macroName' maxlength='24' value='");
   c += htmlEscape(String(m.name));
-  c += "' oninput='scheduleSave()'>";
+  c += F("' oninput='scheduleSave()'>");
 
   sendHtmlChunk(c);
-  c = "";
+  c = F("");
 
   c.reserve(2100);
-  c = "<section class='fieldgroup'>";
-  c += "<h3>En direct</h3><p>La signature lumineuse de cette émission.</p><div class='grid2'>";
-  c += "<div><label>Couleur DIRECT</label><input id='directColor' type='color' value='";
+  c = F("<section class='fieldgroup'>");
+  c += F("<h3>En direct</h3><p>La signature lumineuse de cette émission.</p><div class='grid2'>");
+  c += F("<div><label>Couleur DIRECT</label><input id='directColor' type='color' value='");
   c += rgbToHex(m.r,m.g,m.b);
-  c += "' oninput=\"preview('direct');scheduleSave()\" onchange='saveNow()'></div>";
-  c += "<div><label>Intensité DIRECT : <span id='directIv'>";
+  c += F("' oninput=\"preview('direct');scheduleSave()\" onchange='saveNow()'></div>");
+  c += F("<div><label>Intensité DIRECT : <span id='directIv'>");
   c += String(m.intensity);
-  c += "%</span></label><input id='directIntensity' type='range' min='0' max='100' value='";
+  c += F("%</span></label><input id='directIntensity' type='range' min='0' max='100' value='");
   c += String(m.intensity);
-  c += "' oninput=\"document.getElementById('directIv').textContent=this.value+'%';preview('direct');scheduleSave()\" onchange='saveNow()'></div>";
-  c += "</div><label for='directMotion'>Animation en direct</label><select id='directMotion' onchange=\"updateMotionControls();preview('direct');saveNow()\">";
-  c += "<option value='0'";if(motionSettings.mode[i]==0)c += " selected";c += ">Fixe</option>";
-  c += "<option value='1'";if(motionSettings.mode[i]==1)c += " selected";c += ">Respiration</option>";
-  c += "<option value='2'";if(motionSettings.mode[i]==2)c += " selected";c += ">Balayage gauche → droite</option>";
-  c += "<option value='3'";if(motionSettings.mode[i]==3)c += " selected";c += ">Balayage droite → gauche</option>";
-  c += "<option value='4'";if(motionSettings.mode[i]==4)c += " selected";c += ">Comète autour du logo</option>";
-  c += "<option value='5'";if(motionSettings.mode[i]==5)c += " selected";c += ">Balayage aller-retour</option>";
-  c += "<option value='6'";if(motionSettings.mode[i]==6)c += " selected";c += ">Arc-en-ciel</option>";
-  c += "<option value='7'";if(motionSettings.mode[i]==7)c += " selected";c += ">Ouverture depuis le centre</option>";
-  c += "<option value='8'";if(motionSettings.mode[i]==8)c += " selected";c += ">Balayage haut → bas</option>";
-  c += "<option value='9'";if(motionSettings.mode[i]==9)c += " selected";c += ">Balayage bas → haut</option>";
-  if(motionSettings.mode[i]==10)c += "<option value='10' selected>Ancienne séquence DIRECT</option>";
+  c += F("' oninput=\"document.getElementById('directIv').textContent=this.value+'%';preview('direct');scheduleSave()\" onchange='saveNow()'></div>");
+  c += F("</div><label for='directMotion'>Animation en direct</label><select id='directMotion' onchange=\"updateMotionControls();preview('direct');saveNow()\">");
+  c += F("<option value='0'");if(motionSettings.mode[i]==0)c += F(" selected");c += F(">Fixe</option>");
+  c += F("<option value='1'");if(motionSettings.mode[i]==1)c += F(" selected");c += F(">Respiration</option>");
+  c += F("<option value='2'");if(motionSettings.mode[i]==2)c += F(" selected");c += F(">Balayage gauche → droite</option>");
+  c += F("<option value='3'");if(motionSettings.mode[i]==3)c += F(" selected");c += F(">Balayage droite → gauche</option>");
+  c += F("<option value='4'");if(motionSettings.mode[i]==4)c += F(" selected");c += F(">Comète autour du logo</option>");
+  c += F("<option value='5'");if(motionSettings.mode[i]==5)c += F(" selected");c += F(">Balayage aller-retour</option>");
+  c += F("<option value='6'");if(motionSettings.mode[i]==6)c += F(" selected");c += F(">Arc-en-ciel</option>");
+  c += F("<option value='7'");if(motionSettings.mode[i]==7)c += F(" selected");c += F(">Ouverture depuis le centre</option>");
+  c += F("<option value='8'");if(motionSettings.mode[i]==8)c += F(" selected");c += F(">Balayage haut → bas</option>");
+  c += F("<option value='9'");if(motionSettings.mode[i]==9)c += F(" selected");c += F(">Balayage bas → haut</option>");
+  if(motionSettings.mode[i]==10)c += F("<option value='10' selected>Ancienne séquence DIRECT</option>");
   c += libraryOptions(motionSettings.mode[i]);
-  c += "</select><label for='motionCycle'>Durée d’un cycle</label><select id='motionCycle' onchange=\"preview('direct');saveNow()\">";
+  c += F("</select><label for='motionCycle'>Durée d’un cycle</label><select id='motionCycle' onchange=\"preview('direct');saveNow()\">");
   const uint16_t cycles[]={1000,2000,3000,4000,6000,8000,12000};
   for(uint8_t n=0;n<7;n++){
-    c += "<option value='";c += String(cycles[n]);c += "'";
-    if(motionSettings.cycleMs[i]==cycles[n])c += " selected";
-    c += ">";c += String(cycles[n]/1000);c += " s</option>";
+    c += F("<option value='");c += String(cycles[n]);c += F("'");
+    if(motionSettings.cycleMs[i]==cycles[n])c += F(" selected");
+    c += F(">");c += String(cycles[n]/1000);c += F(" s</option>");
   }
-  c += "</select><div class='editor-link'><a class='save' href='/animation'>Éditeur d’animation →</a></div></section>";
+  c += F("</select><div class='editor-link'><a class='save' href='/animation'>Éditeur d’animation →</a></div></section>");
 
   sendHtmlChunk(c);
-  c = "";
+  c = F("");
 
   c.reserve(2200);
-  c = "<section class='fieldgroup'>";
-  c += "<h3>Hors direct</h3><label>";
-  c += "<input id='idleOff' type='checkbox' style='width:auto;margin-right:8px'";
+  c = F("<section class='fieldgroup'>");
+  c += F("<h3>Hors direct</h3><label>");
+  c += F("<input id='idleOff' type='checkbox' style='width:auto;margin-right:8px'");
 
-  if (m.idleOff) c += " checked";
+  if (m.idleOff) c += F(" checked");
 
-  c += " onchange=\"updateIdleControls();preview('idle');saveNow()\">";
-  c += " Eteindre completement le ON AIR hors direct</label>";
-  c += "<div id='idleControls' class='grid2'>";
-  c += "<div><label>Couleur HORS DIRECT</label><input id='idleColor' type='color' value='";
+  c += F(" onchange=\"updateIdleControls();preview('idle');saveNow()\">");
+  c += F(" Eteindre completement le ON AIR hors direct</label>");
+  c += F("<div id='idleControls' class='grid2'>");
+  c += F("<div><label>Couleur HORS DIRECT</label><input id='idleColor' type='color' value='");
   c += rgbToHex(m.idleR,m.idleG,m.idleB);
-  c += "' oninput=\"preview('idle');scheduleSave()\" onchange='saveNow()'></div>";
-  c += "<div><label>Intensité HORS DIRECT : <span id='idleIv'>";
+  c += F("' oninput=\"preview('idle');scheduleSave()\" onchange='saveNow()'></div>");
+  c += F("<div><label>Intensité HORS DIRECT : <span id='idleIv'>");
   c += String(m.idleIntensity);
-  c += "%</span></label><input id='idleIntensity' type='range' min='0' max='100' value='";
+  c += F("%</span></label><input id='idleIntensity' type='range' min='0' max='100' value='");
   c += String(m.idleIntensity);
-  c += "' oninput=\"document.getElementById('idleIv').textContent=this.value+'%';preview('idle');scheduleSave()\" onchange='saveNow()'></div>";
-  c += "</div><div class='small' style='margin-top:8px'>État lumineux lorsque cette émission quitte le DIRECT.</div></section>";
+  c += F("' oninput=\"document.getElementById('idleIv').textContent=this.value+'%';preview('idle');scheduleSave()\" onchange='saveNow()'></div>");
+  c += F("</div><div class='small' style='margin-top:8px'>État lumineux lorsque cette émission quitte le DIRECT.</div></section>");
 
   sendHtmlChunk(c);
-  c = "";
+  c = F("");
 
   c.reserve(2500);
-  c = "<section class='fieldgroup'>";
-  c += "<h3>Alerte</h3><p>Une séquence d’alerte, puis le passage automatique en DIRECT.</p>";
-  c += "<label>Animation</label><select id='alertAnimation' onchange='updateAnimationHelp();saveNow()'>";
+  c = F("<section class='fieldgroup'>");
+  c += F("<h3>Alerte</h3><p>Une séquence d’alerte, puis le passage automatique en DIRECT.</p>");
+  c += F("<label>Animation</label><select id='alertAnimation' onchange='updateAnimationHelp();saveNow()'>");
 
-  c += "<option value='0'";
-  if (m.alertAnimation == ALERT_CLASSIC) c += " selected";
-  c += ">Clignotement classique</option>";
+  c += F("<option value='0'");
+  if (m.alertAnimation == ALERT_CLASSIC) c += F(" selected");
+  c += F(">Clignotement classique</option>");
 
-  c += "<option value='1'";
-  if (m.alertAnimation == ALERT_FADE_TO_BLACK) c += " selected";
-  c += ">Flash 100% → fade 0% (boucle)</option>";
+  c += F("<option value='1'");
+  if (m.alertAnimation == ALERT_FADE_TO_BLACK) c += F(" selected");
+  c += F(">Flash 100% → fade 0% (boucle)</option>");
 
-  c += "<option value='2'";
-  if (m.alertAnimation == ALERT_TRAFFIC_GRADIENT) c += " selected";
-  c += ">Gradient vert → jaune → rouge (1 passage)</option>";
+  c += F("<option value='2'");
+  if (m.alertAnimation == ALERT_TRAFFIC_GRADIENT) c += F(" selected");
+  c += F(">Gradient vert → jaune → rouge (1 passage)</option>");
 
-  c += "<option value='3'";
-  if (m.alertAnimation == ALERT_ACCELERATING) c += " selected";
-  c += ">Clignotement accelere</option>";
+  c += F("<option value='3'");
+  if (m.alertAnimation == ALERT_ACCELERATING) c += F(" selected");
+  c += F(">Clignotement accelere</option>");
 
-  c += "<option value='4'";
-  if (m.alertAnimation == ALERT_DOUBLE_FLASH) c += " selected";
-  c += ">Double flash / heartbeat</option>";
+  c += F("<option value='4'");
+  if (m.alertAnimation == ALERT_DOUBLE_FLASH) c += F(" selected");
+  c += F(">Double flash / heartbeat</option>");
 
-  c += "<option value='5'";
-  if (m.alertAnimation == ALERT_LOGO_CHASE) c += " selected";
-  c += ">Logo : point lumineux tournant</option>";
+  c += F("<option value='5'");
+  if (m.alertAnimation == ALERT_LOGO_CHASE) c += F(" selected");
+  c += F(">Logo : point lumineux tournant</option>");
 
-  c += "<option value='6'";
-  if (m.alertAnimation == ALERT_LOGO_DRAW) c += " selected";
-  c += ">Logo : dessin progressif du contour</option>";
-  c += "<option value='7'";if(m.alertAnimation==7)c += " selected";c += ">Balayage gauche → droite</option>";
-  c += "<option value='8'";if(m.alertAnimation==8)c += " selected";c += ">Balayage droite → gauche</option>";
-  c += "<option value='9'";if(m.alertAnimation==9)c += " selected";c += ">Respiration</option>";
-  c += "<option value='10'";if(m.alertAnimation==10)c += " selected";c += ">Ouverture depuis le centre</option>";
-  c += "<option value='11'";if(m.alertAnimation==11)c += " selected";c += ">Arc-en-ciel horizontal</option>";
-  c += "<option value='12'";if(m.alertAnimation==ALERT_SWEEP_TB)c += " selected";c += ">Balayage haut → bas</option>";
-  c += "<option value='13'";if(m.alertAnimation==ALERT_SWEEP_BT)c += " selected";c += ">Balayage bas → haut</option>";
-  if(m.alertAnimation==ALERT_CUSTOM)c += "<option value='14' selected>Ancienne séquence ALERTE</option>";
+  c += F("<option value='6'");
+  if (m.alertAnimation == ALERT_LOGO_DRAW) c += F(" selected");
+  c += F(">Logo : dessin progressif du contour</option>");
+  c += F("<option value='7'");if(m.alertAnimation==7)c += F(" selected");c += F(">Balayage gauche → droite</option>");
+  c += F("<option value='8'");if(m.alertAnimation==8)c += F(" selected");c += F(">Balayage droite → gauche</option>");
+  c += F("<option value='9'");if(m.alertAnimation==9)c += F(" selected");c += F(">Respiration</option>");
+  c += F("<option value='10'");if(m.alertAnimation==10)c += F(" selected");c += F(">Ouverture depuis le centre</option>");
+  c += F("<option value='11'");if(m.alertAnimation==11)c += F(" selected");c += F(">Arc-en-ciel horizontal</option>");
+  c += F("<option value='12'");if(m.alertAnimation==ALERT_SWEEP_TB)c += F(" selected");c += F(">Balayage haut → bas</option>");
+  c += F("<option value='13'");if(m.alertAnimation==ALERT_SWEEP_BT)c += F(" selected");c += F(">Balayage bas → haut</option>");
+  if(m.alertAnimation==ALERT_CUSTOM)c += F("<option value='14' selected>Ancienne séquence ALERTE</option>");
   c += libraryOptions(m.alertAnimation);
-  c += "</select>";
-  c += "<div class='editor-link'><a class='save' href='/animation'>Éditeur d’animation →</a></div>";
+  c += F("</select>");
+  c += F("<div class='editor-link'><a class='save' href='/animation'>Éditeur d’animation →</a></div>");
 
 
-  c += "<div id='animationHelp' class='small' style='margin-top:7px'></div>";
-  c += "<div class='grid2'><div><label>Durée de l’alerte</label>";
-  c += "<input id='alertDuration' type='number' min='1' max='60' value='";
+  c += F("<div id='animationHelp' class='small' style='margin-top:7px'></div>");
+  c += F("<div class='grid2'><div><label>Durée de l’alerte</label>");
+  c += F("<input id='alertDuration' type='number' min='1' max='60' value='");
   c += String(m.alertDuration);
-  c += "' onchange='saveNow()'><div class='small'>secondes</div></div>";
-  c += "<div><label>Vitesse / rythme</label>";
-  c += "<input id='blinkMs' type='number' min='100' max='2000' step='50' value='";
+  c += F("' onchange='saveNow()'><div class='small'>secondes</div></div>");
+  c += F("<div><label>Vitesse / rythme</label>");
+  c += F("<input id='blinkMs' type='number' min='100' max='2000' step='50' value='");
   c += String(m.blinkMs);
-  c += "' onchange='saveNow()'><div class='small'>100 ms = rapide · 2000 ms = lent</div></div></div>";
-  c += "<div class='small' style='margin-top:10px'>La fin de l alerte passe automatiquement en DIRECT.</div>";
-  c += "<div class='testrow'><button type='button' class='direct' onclick=\"preview('direct')\">APERÇU DIRECT</button>";
-  c += "<button type='button' class='alert' onclick='testAlert()'>TEST ALERTE</button></div></section>";
+  c += F("' onchange='saveNow()'><div class='small'>100 ms = rapide · 2000 ms = lent</div></div></div>");
+  c += F("<div class='small' style='margin-top:10px'>La fin de l alerte passe automatiquement en DIRECT.</div>");
+  c += F("<div class='testrow'><button type='button' class='direct' onclick=\"preview('direct')\">APERÇU DIRECT</button>");
+  c += F("<button type='button' class='alert' onclick='testAlert()'>TEST ALERTE</button></div></section>");
 
   sendHtmlChunk(c);
-  c = "";
+  c = F("");
 
   c.reserve(2000);
-  c = "<div class='filebox' style='margin-top:16px'><label style='margin-top:0'>Logo PNG / JPG</label>";
+  c = F("<div class='filebox' style='margin-top:16px'><label style='margin-top:0'>Logo PNG / JPG</label>");
 
   if (logoAvailable(i)) {
-    c += "<div style='display:flex;align-items:center;gap:12px;margin-bottom:10px'>";
-    c += "<img alt='' class='logo' src='/logo?i=";
+    c += F("<div style='display:flex;align-items:center;gap:12px;margin-bottom:10px'>");
+    c += F("<img alt='' class='logo' src='/logo?i=");
     c += String(i);
-    c += "'><div class='small'>";
+    c += F("'><div class='small'>");
 
-    if (isBuiltinLogo(String(m.logoPath))) c += "Logo integre";
+    if (isBuiltinLogo(String(m.logoPath))) c += F("Logo integre");
     else c += htmlEscape(String(m.logoPath));
 
-    c += "</div></div>";
+    c += F("</div></div>");
   }
 
-  c += "<form method='POST' action='/uploadLogo?i=";
+  c += F("<form method='POST' action='/uploadLogo?i=");
   c += String(i);
-  c += "' enctype='multipart/form-data'>";
-  c += "<input type='file' name='logo' accept='.png,.jpg,.jpeg,image/png,image/jpeg'>";
-  c += "<button class='save' type='submit'>IMPORTER LE LOGO</button></form>";
+  c += F("' enctype='multipart/form-data'>");
+  c += F("<input type='file' name='logo' accept='.png,.jpg,.jpeg,image/png,image/jpeg'>");
+  c += F("<button class='save' type='submit'>IMPORTER LE LOGO</button></form>");
 
   if (strlen(m.logoPath) && !isBuiltinLogo(String(m.logoPath))) {
-    c += "<button type='button' class='danger' onclick='deleteLogo()'>REMETTRE LE LOGO D ORIGINE</button>";
+    c += F("<button type='button' class='danger' onclick='deleteLogo()'>REMETTRE LE LOGO D ORIGINE</button>");
   }
 
-  c += "</div><button type='button' class='save' onclick='saveNow()'>ENREGISTRER MAINTENANT</button></div>";
+  c += F("</div><button type='button' class='save' onclick='saveNow()'>ENREGISTRER MAINTENANT</button></div>");
 
   sendHtmlChunk(c);
-  c = "";
+  c = F("");
 
-  c = "<script>const macroIndex=";
+  c = F("<script>const macroIndex=");
   c += String(i);
-  c += ";</script>";
+  c += F(";</script>");
   sendHtmlChunk(c);
 
+  c=String();
   server.sendContent_P(MACRO_PAGE_JS);
   server.sendContent_P(UI_ENHANCEMENT_JS);
-  sendHtmlChunk("</main></body></html>");
+  sendHtmlFlash(PSTR("</main></body></html>"));
   endChunkedHtml();
 
   }
@@ -3914,7 +3931,7 @@ bool parseMacroIndex(uint8_t& i) {
 
 void redirectHome() {
   server.sendHeader("Location", "/", true);
-  server.send(302, "text/plain", "");
+  server.send_P(302,PSTR("text/plain"),PSTR(""));
 }
 
 void sendStatusResponse() {
@@ -3927,7 +3944,7 @@ void handleDirect() {
   uint8_t i;
 
   if (!parseMacroIndex(i)) {
-    server.send(400,"application/json","{\"error\":\"macro invalide\"}");
+    server.send_P(400,PSTR("application/json"),PSTR("{\"error\":\"macro invalide\"}"));
     return;
   }
 
@@ -3947,7 +3964,7 @@ void handleDirect() {
 
   // Une autre macro est deja active : verrouillage.
   if (outputEnabled && activeMacro >= 0 && activeMacro != i) {
-    Serial.println("[MACRO] DIRECT refuse : une autre macro est active");
+    Serial.println(F("[MACRO] DIRECT refuse : une autre macro est active"));
     sendStatusResponse();
     return;
   }
@@ -3960,13 +3977,13 @@ void handleAlert() {
   uint8_t i;
 
   if (!parseMacroIndex(i)) {
-    server.send(400,"application/json","{\"error\":\"macro invalide\"}");
+    server.send_P(400,PSTR("application/json"),PSTR("{\"error\":\"macro invalide\"}"));
     return;
   }
 
   // Une alerte ne peut etre lancee que lorsque le ON AIR est eteint.
   if (alertRunning || outputEnabled) {
-    Serial.println("[MACRO] ALERTE refusee : sortie deja active");
+    Serial.println(F("[MACRO] ALERTE refusee : sortie deja active"));
     sendStatusResponse();
     return;
   }
@@ -3979,14 +3996,14 @@ void handleAlertTest() {
   uint8_t i;
 
   if (!parseMacroIndex(i)) {
-    server.send(400,"application/json","{\"error\":\"macro invalide\"}");
+    server.send_P(400,PSTR("application/json"),PSTR("{\"error\":\"macro invalide\"}"));
     return;
   }
 
   // On refuse seulement si un vrai DIRECT est actuellement actif.
   // Apres un test, le boitier revient automatiquement TOUT ETEINT.
   if (alertRunning || outputEnabled) {
-    Serial.println("[MACRO] TEST ALERTE refuse : sortie deja active");
+    Serial.println(F("[MACRO] TEST ALERTE refuse : sortie deja active"));
     sendStatusResponse();
     return;
   }
@@ -4000,7 +4017,7 @@ void handleOff() {
   // il annule DIRECT, HORS DIRECT ou ALERTE et met physiquement le RGB a noir.
   blackout();
 
-  Serial.println("[ON AIR] OFF depuis interface");
+  Serial.println(F("[ON AIR] OFF depuis interface"));
 
   sendStatusResponse();
 }
@@ -4014,7 +4031,7 @@ void handleStatus() {
 
 void redirectSettings() {
   server.sendHeader("Location", "/settings", true);
-  server.send(303, "text/plain", "");
+  server.send_P(303,PSTR("text/plain"),PSTR(""));
 }
 
 void handleSaveGeneral() {
@@ -4023,9 +4040,9 @@ void handleSaveGeneral() {
   String apPassword = server.arg("apPassword");
   deviceName.trim(); apSSID.trim();
 
-  if (deviceName.length() < 1 || deviceName.length() > 32) { server.send(400,"text/plain","Nom appareil invalide"); return; }
-  if (apSSID.length() < 1 || apSSID.length() > 32) { server.send(400,"text/plain","SSID invalide"); return; }
-  if (apPassword.length() > 0 && apPassword.length() < 8) { server.send(400,"text/plain","Mot de passe Wi-Fi : minimum 8 caracteres"); return; }
+  if (deviceName.length() < 1 || deviceName.length() > 32) { server.send_P(400,PSTR("text/plain"),PSTR("Nom appareil invalide")); return; }
+  if (apSSID.length() < 1 || apSSID.length() > 32) { server.send_P(400,PSTR("text/plain"),PSTR("SSID invalide")); return; }
+  if (apPassword.length() > 0 && apPassword.length() < 8) { server.send_P(400,PSTR("text/plain"),PSTR("Mot de passe Wi-Fi : minimum 8 caracteres")); return; }
 
   bool wifiChanged = apSSID != String(config.apSSID) || apPassword.length() > 0;
   deviceName.toCharArray(config.deviceName, sizeof(config.deviceName));
@@ -4038,8 +4055,7 @@ void handleSaveGeneral() {
     String page;
     page.reserve(2200);
 
-    page =
-      "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
+    page = F("<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
       "<meta name='viewport' content='width=device-width,initial-scale=1'>"
       "<style>"
       "body{font-family:Arial;background:#090b0e;color:#fff;padding:25px}"
@@ -4047,18 +4063,17 @@ void handleSaveGeneral() {
       "a{color:#69a7ff}"
       "</style></head><body><div class='box'>"
       "<h2>Wi-Fi enregistre</h2>"
-      "<p>L'ESP va redemarrer avec le nouveau nom de reseau :</p><h3>";
+      "<p>L'ESP va redemarrer avec le nouveau nom de reseau :</p><h3>");
 
     page += htmlEscape(String(config.apSSID));
 
-    page +=
-      "</h3><p>Reconnecte ton telephone a ce Wi-Fi, puis ouvre :</p>"
+    page += F("</h3><p>Reconnecte ton telephone a ce Wi-Fi, puis ouvre :</p>"
       "<p><b>http://192.168.4.1</b></p>"
       "<p>La page essaiera de revenir automatiquement a l'accueil.</p>"
       "<p><a href='http://192.168.4.1/'>OUVRIR LE CONTROLE</a></p>"
       "<script>"
       "setTimeout(function(){window.location.replace('http://192.168.4.1/');},7000);"
-      "</script></div></body></html>";
+      "</script></div></body></html>");
 
     server.sendHeader("Connection", "close");
     server.send(200,"text/html; charset=utf-8",page);
@@ -4080,7 +4095,7 @@ void clearWiFiScanResults() {
 void beginWiFiScanAsync() {
   if (wifiScanRunning) return;
 
-  Serial.println("[WIFI SCAN] Demarrage asynchrone...");
+  Serial.println(F("[WIFI SCAN] Demarrage asynchrone..."));
 
   // Le point d'acces reste actif pendant le scan.
   if (WiFi.getMode() == WIFI_AP) {
@@ -4102,7 +4117,7 @@ void beginWiFiScanAsync() {
   if (result < -1) {
     wifiScanRunning = false;
     wifiScanFailed = true;
-    Serial.println("[WIFI SCAN] ECHEC lancement");
+    Serial.println(F("[WIFI SCAN] ECHEC lancement"));
   }
 }
 
@@ -4117,7 +4132,7 @@ void finishWiFiScan(int n) {
     wifiScanFailed = false;
     WiFi.scanDelete();
 
-    Serial.println("[WIFI SCAN] Aucun reseau trouve");
+    Serial.println(F("[WIFI SCAN] Aucun reseau trouve"));
     return;
   }
 
@@ -4202,7 +4217,7 @@ void updateWiFiScan() {
     wifiScanFailed = true;
     WiFi.scanDelete();
 
-    Serial.println("[WIFI SCAN] ECHEC pendant le scan");
+    Serial.println(F("[WIFI SCAN] ECHEC pendant le scan"));
     return;
   }
 
@@ -4210,7 +4225,7 @@ void updateWiFiScan() {
 }
 
 void handleWiFiScanStart() {
-  Serial.println("[WIFI SCAN] Demande recue depuis interface");
+  Serial.println(F("[WIFI SCAN] Demande recue depuis interface"));
 
   // Si un scan est deja actif, l'interface peut simplement continuer
   // a interroger /result.
@@ -4267,24 +4282,24 @@ void handleWiFiScanResult() {
     return;
   }
 
-  json = "{\"state\":\"ready\",\"networks\":[";
+  json = F("{\"state\":\"ready\",\"networks\":[");
 
   for (uint8_t i = 0; i < wifiScanItemCount; i++) {
-    if (i > 0) json += ",";
+    if (i > 0) json += F(",");
 
-    json += "{";
+    json += F("{");
     json += "\"ssid\":\"" + jsonEscape(String(wifiScanItems[i].ssid)) + "\",";
     json += "\"rssi\":" + String(wifiScanItems[i].rssi) + ",";
     json += "\"channel\":" + String(wifiScanItems[i].channel) + ",";
-    json += "\"secure\":";
+    json += F("\"secure\":");
     json += wifiScanItems[i].secure ? "true" : "false";
-    json += ",";
-    json += "\"saved\":";
+    json += F(",");
+    json += F("\"saved\":");
     json += wifiScanItems[i].saved ? "true" : "false";
-    json += "}";
+    json += F("}");
   }
 
-  json += "]}";
+  json += F("]}");
 
   server.send(200, "application/json; charset=utf-8", json);
 }
@@ -4297,17 +4312,17 @@ void handleSaveExternalWiFi() {
   ssid.trim();
 
   if (enabled && ssid.length() == 0 && config.knownWiFiCount == 0) {
-    server.send(400, "text/plain; charset=utf-8", "Selectionne au moins un Wi-Fi a memoriser");
+    server.send_P(400,PSTR("text/plain; charset=utf-8"),PSTR("Selectionne au moins un Wi-Fi a memoriser"));
     return;
   }
 
   if (ssid.length() > 32) {
-    server.send(400, "text/plain; charset=utf-8", "SSID externe invalide");
+    server.send_P(400,PSTR("text/plain; charset=utf-8"),PSTR("SSID externe invalide"));
     return;
   }
 
   if (password.length() > 0 && password.length() < 8) {
-    server.send(400, "text/plain; charset=utf-8", "Mot de passe externe : minimum 8 caracteres");
+    server.send_P(400,PSTR("text/plain; charset=utf-8"),PSTR("Mot de passe externe : minimum 8 caracteres"));
     return;
   }
 
@@ -4337,17 +4352,16 @@ void handleSaveExternalWiFi() {
   String page;
   page.reserve(2400);
 
-  page =
-    "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
+  page = F("<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<style>"
     "body{font-family:Arial;background:#090b0e;color:#fff;padding:22px}"
     ".box{max-width:560px;margin:auto;background:#14181d;border:1px solid #2a3139;border-radius:16px;padding:20px}"
     "a{display:block;margin-top:12px;padding:14px;border-radius:12px;background:#2878d0;color:#fff;text-decoration:none;text-align:center;font-weight:bold}"
-    "</style></head><body><div class='box'>";
+    "</style></head><body><div class='box'>");
 
   if (enabled) {
-    page += "<h2>Wi-Fi memorise</h2>";
+    page += F("<h2>Wi-Fi memorise</h2>");
 
     if (ssid.length() > 0) {
       page += "<p>Reseau : <b>" + htmlEscape(ssid) + "</b></p>";
@@ -4357,34 +4371,34 @@ void handleSaveExternalWiFi() {
         ssid.length() > 0 &&
         WiFi.SSID() == ssid) {
 
-      page += "<p>L ESP est deja connecte a ce reseau. <b>Aucun redemarrage.</b></p>";
+      page += F("<p>L ESP est deja connecte a ce reseau. <b>Aucun redemarrage.</b></p>");
     } else {
-      page += "<p>Connexion en cours. <b>L ESP ne redemarre pas.</b></p>";
-      page += "<p>Le Wi-Fi ON_AIR-MOC reste actif. Il peut y avoir une tres courte coupure radio pendant le changement de canal.</p>";
+      page += F("<p>Connexion en cours. <b>L ESP ne redemarre pas.</b></p>");
+      page += F("<p>Le Wi-Fi ON_AIR-MOC reste actif. Il peut y avoir une tres courte coupure radio pendant le changement de canal.</p>");
     }
 
-    page += "<p>Depuis le meme routeur, utilise ensuite : <b>http://onair-moc.local</b></p>";
+    page += F("<p>Depuis le meme routeur, utilise ensuite : <b>http://onair-moc.local</b></p>");
   } else {
-    page += "<h2>Wi-Fi externe desactive</h2>";
-    page += "<p>Le boitier reste accessible sur ON_AIR-MOC / 192.168.4.1.</p>";
+    page += F("<h2>Wi-Fi externe desactive</h2>");
+    page += F("<p>Le boitier reste accessible sur ON_AIR-MOC / 192.168.4.1.</p>");
   }
 
-  page += "<a href='/settings'>RETOUR AUX PARAMETRES</a>";
-  page += "<a href='/'>CONTROLE</a>";
-  page += "</div></body></html>";
+  page += F("<a href='/settings'>RETOUR AUX PARAMETRES</a>");
+  page += F("<a href='/'>CONTROLE</a>");
+  page += F("</div></body></html>");
 
   server.sendHeader("Cache-Control", "no-store");
   server.sendHeader("Connection", "close");
   server.send(200, "text/html; charset=utf-8", page);
 
-  Serial.println("[WIFI EXT] Configuration sauvegardee SANS redemarrage");
+  Serial.println(F("[WIFI EXT] Configuration sauvegardee SANS redemarrage"));
 }
 
 void handleForgetWiFi() {
   int index = server.arg("i").toInt();
 
   if (index < 0 || index >= config.knownWiFiCount) {
-    server.send(400, "text/plain", "Index Wi-Fi invalide");
+    server.send_P(400,PSTR("text/plain"),PSTR("Index Wi-Fi invalide"));
     return;
   }
 
@@ -4400,7 +4414,7 @@ void handleForgetWiFi() {
     mdnsStarted = false;
   }
 
-  server.send(200, "text/plain", "OK");
+  server.send_P(200,PSTR("text/plain"),PSTR("OK"));
 }
 
 bool readMacroRequest(uint8_t& idx,
@@ -4517,7 +4531,7 @@ void handleMacroAutoSave() {
         alertDuration,
         blinkMs)) {
 
-    server.send(400, "application/json", "{\"ok\":false}");
+    server.send_P(400,PSTR("application/json"),PSTR("{\"ok\":false}"));
     return;
   }
 
@@ -4539,7 +4553,7 @@ void handleMacroAutoSave() {
   );
 
   if(!saveMotionSettings()){
-    server.send(500,"application/json","{\"ok\":false,\"reason\":\"motion storage\"}");return;
+    server.send_P(500,PSTR("application/json"),PSTR("{\"ok\":false,\"reason\":\"motion storage\"}"));return;
   }
   saveConfig();
 
@@ -4550,12 +4564,12 @@ void handleMacroAutoSave() {
     renderCurrentOutput();
   }
 
-  server.send(200, "application/json", "{\"ok\":true}");
+  server.send_P(200,PSTR("application/json"),PSTR("{\"ok\":true}"));
 }
 
 void handleMacroPreview() {
   if (alertRunning) {
-    server.send(409, "application/json", "{\"ok\":false,\"reason\":\"alert\"}");
+    server.send_P(409,PSTR("application/json"),PSTR("{\"ok\":false,\"reason\":\"alert\"}"));
     return;
   }
 
@@ -4585,7 +4599,7 @@ void handleMacroPreview() {
         alertDuration,
         blinkMs)) {
 
-    server.send(400, "application/json", "{\"ok\":false}");
+    server.send_P(400,PSTR("application/json"),PSTR("{\"ok\":false}"));
     return;
   }
 
@@ -4612,7 +4626,7 @@ void handleMacroPreview() {
 
   showMacroPreview(idx, directState);
 
-  server.send(200, "application/json", "{\"ok\":true}");
+  server.send_P(200,PSTR("application/json"),PSTR("{\"ok\":true}"));
 }
 
 // Route historique conservee pour compatibilite avec d'anciennes pages.
@@ -4655,13 +4669,13 @@ void handleUploadLogoData() {
 }
 
 void handleUploadLogoComplete() {
-  if (!uploadAccepted) { server.send(400,"text/plain","Upload refuse. Utiliser PNG ou JPG."); return; }
+  if (!uploadAccepted) { server.send_P(400,PSTR("text/plain"),PSTR("Upload refuse. Utiliser PNG ou JPG.")); return; }
   redirectSettings();
 }
 
 void handleDeleteLogo() {
   int i = server.arg("i").toInt();
-  if (i < 0 || i >= MACRO_COUNT) { server.send(400,"text/plain","Macro invalide"); return; }
+  if (i < 0 || i >= MACRO_COUNT) { server.send_P(400,PSTR("text/plain"),PSTR("Macro invalide")); return; }
 
   String path = config.macro[i].logoPath;
 
@@ -4672,14 +4686,14 @@ void handleDeleteLogo() {
   setBuiltinLogo(i);
   saveConfig();
 
-  server.send(200,"text/plain","OK");
+  server.send_P(200,PSTR("text/plain"),PSTR("OK"));
 }
 
 void handleLogo() {
   int i = server.arg("i").toInt();
 
   if (i < 0 || i >= MACRO_COUNT) {
-    server.send(404,"text/plain","Logo absent");
+    server.send_P(404,PSTR("text/plain"),PSTR("Logo absent"));
     return;
   }
 
@@ -4703,7 +4717,7 @@ void handleLogo() {
   }
 
   if (!path.length() || !LittleFS.exists(path)) {
-    server.send(404,"text/plain","Logo absent");
+    server.send_P(404,PSTR("text/plain"),PSTR("Logo absent"));
     return;
   }
 
@@ -4713,12 +4727,12 @@ void handleLogo() {
 }
 
 void handleStartupTest() {
-  if(outputEnabled||alertRunning){server.send(409,"application/json","{\"ok\":false,\"reason\":\"live\"}");return;}
-  server.send(200,"application/json","{\"ok\":true}");
+  if(outputEnabled||alertRunning){server.send_P(409,PSTR("application/json"),PSTR("{\"ok\":false,\"reason\":\"live\"}"));return;}
+  server.send_P(200,PSTR("application/json"),PSTR("{\"ok\":true}"));
   startupTestActive=true;startupAnimation();
 }
 
-void handleReboot() { server.send(200,"text/plain","Redemarrage"); delay(800); ESP.restart(); }
+void handleReboot() { server.send_P(200,PSTR("text/plain"),PSTR("Redemarrage")); delay(800); ESP.restart(); }
 
 void handleFactoryReset() {
   MotionSettings previousMotion=motionSettings;
@@ -4726,7 +4740,7 @@ void handleFactoryReset() {
   resetMotionSettings();
   if(!saveMotionSettings()){
     motionSettings=previousMotion;motionSavedChecksum=previousChecksum;
-    server.send(500,"text/plain","Impossible de reinitialiser les animations");return;
+    server.send_P(500,PSTR("text/plain"),PSTR("Impossible de reinitialiser les animations"));return;
   }
   for(uint8_t id=32;id<48;id++){char path[24];snprintf(path,sizeof(path),"/anim%u.bin",id);LittleFS.remove(path);}
   LittleFS.remove("/library.migrated");
@@ -4739,7 +4753,7 @@ void handleFactoryReset() {
     if (LittleFS.exists(png)) LittleFS.remove(png);
     if (LittleFS.exists(jpg)) LittleFS.remove(jpg);
   }
-  server.send(200,"text/plain","Configuration reinitialisee");
+  server.send_P(200,PSTR("text/plain"),PSTR("Configuration reinitialisee"));
   delay(1000); ESP.restart();
 }
 
@@ -4768,7 +4782,7 @@ void handleConfigExport() {
   server.sendHeader("Content-Disposition","attachment; filename=\"ON_AIR-MOC_backup.cfg\"");
   server.sendHeader("Cache-Control","no-store");
   server.setContentLength(sizeof(header)+payloadSize);
-  server.send(200,"application/octet-stream","");
+  server.send_P(200,PSTR("application/octet-stream"),PSTR(""));
   WiFiClient client=server.client();
   client.write(reinterpret_cast<const uint8_t*>(&header),sizeof(header));
   client.write(payload,payloadSize);
@@ -4847,6 +4861,7 @@ String uptimeText() {
 }
 
 void sendDiagnosticsPage() {
+  if(!webMemoryReady())return;
   Serial.println(
     "[WEB] GET /diagnostics stream | heap=" + String(ESP.getFreeHeap()) +
     " | maxblock=" + String(ESP.getMaxFreeBlockSize())
@@ -4858,8 +4873,7 @@ void sendDiagnosticsPage() {
   String c;
   c.reserve(2200);
 
-  c =
-    "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
+  c = F("<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>Diagnostic</title>"
     "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>"
@@ -4867,81 +4881,81 @@ void sendDiagnosticsPage() {
     "<header class='top'><div class='title'>Diagnostic</div>"
     "<a class='iconbtn' href='/settings#system'>← Système</a></header>"
     "<div class='wrap'>"
-    "<div class='section'><h2>Systeme</h2><div class='small'>";
+    "<div class='section'><h2>Systeme</h2><div class='small'>");
 
-  c += "Firmware : <b>";
+  c += F("Firmware : <b>");
   c += String(FIRMWARE_VERSION);
-  c += "</b><br>Uptime : <b>";
+  c += F("</b><br>Uptime : <b>");
   c += uptimeText();
-  c += "</b><br>Dernier reset : <b>";
+  c += F("</b><br>Dernier reset : <b>");
   c += htmlEscape(ESP.getResetReason());
-  c += "</b><br>Heap libre : <b>";
+  c += F("</b><br>Heap libre : <b>");
   c += String(ESP.getFreeHeap());
-  c += " octets</b><br>Plus gros bloc heap : <b>";
+  c += F(" octets</b><br>Plus gros bloc heap : <b>");
   c += String(ESP.getMaxFreeBlockSize());
-  c += " octets</b><br>Taille firmware : <b>";
+  c += F(" octets</b><br>Taille firmware : <b>");
   c += String(ESP.getSketchSize());
-  c += " octets</b><br>Espace OTA libre : <b>";
+  c += F(" octets</b><br>Espace OTA libre : <b>");
   c += String(ESP.getFreeSketchSpace());
-  c += " octets</b></div></div>";
+  c += F(" octets</b></div></div>");
 
   sendHtmlChunk(c);
-  c = "";
+  c = F("");
 
   c.reserve(2000);
-  c = "<div class='section'><h2>Wi-Fi</h2><div class='small'>";
-  c += "AP : <b>";
+  c = F("<div class='section'><h2>Wi-Fi</h2><div class='small'>");
+  c += F("AP : <b>");
   c += htmlEscape(String(config.apSSID));
-  c += "</b><br>IP AP : <b>";
+  c += F("</b><br>IP AP : <b>");
   c += WiFi.softAPIP().toString();
-  c += "</b><br>Clients AP : <b>";
+  c += F("</b><br>Clients AP : <b>");
   c += String(WiFi.softAPgetStationNum());
-  c += "</b><br>Reseaux memorises : <b>";
+  c += F("</b><br>Reseaux memorises : <b>");
   c += String(config.knownWiFiCount);
-  c += "</b><br>";
+  c += F("</b><br>");
 
   if (WiFi.status() == WL_CONNECTED) {
-    c += "Externe : <b style='color:#65d487'>CONNECTE</b><br>SSID : <b>";
+    c += F("Externe : <b style='color:#65d487'>CONNECTE</b><br>SSID : <b>");
     c += htmlEscape(WiFi.SSID());
-    c += "</b><br>IP : <b>";
+    c += F("</b><br>IP : <b>");
     c += WiFi.localIP().toString();
-    c += "</b><br>RSSI : <b>";
+    c += F("</b><br>RSSI : <b>");
     c += String(WiFi.RSSI());
-    c += " dBm</b><br>mDNS : <b>";
+    c += F(" dBm</b><br>mDNS : <b>");
     c += (mdnsStarted ? "ACTIF" : "EN ATTENTE");
-    c += "</b>";
+    c += F("</b>");
   } else {
-    c += "Externe : <b style='color:#ffbc42'>NON CONNECTE</b>";
+    c += F("Externe : <b style='color:#ffbc42'>NON CONNECTE</b>");
   }
 
-  c += "</div></div>";
+  c += F("</div></div>");
 
   sendHtmlChunk(c);
-  c = "";
+  c = F("");
 
   c.reserve(1600);
-  c = "<div class='section'><h2>ON AIR</h2><div class='small'>";
+  c = F("<div class='section'><h2>ON AIR</h2><div class='small'>");
 
-  if (alertRunning) c += "Etat : <b style='color:#f4c542'>ALERTE</b><br>";
-  else if (outputEnabled) c += "Etat : <b style='color:#65d487'>DIRECT</b><br>";
-  else if (activeMacro >= 0) c += "Etat : <b>HORS DIRECT</b><br>";
-  else c += "Etat : <b>ETEINT</b><br>";
+  if (alertRunning) c += F("Etat : <b style='color:#f4c542'>ALERTE</b><br>");
+  else if (outputEnabled) c += F("Etat : <b style='color:#65d487'>DIRECT</b><br>");
+  else if (activeMacro >= 0) c += F("Etat : <b>HORS DIRECT</b><br>");
+  else c += F("Etat : <b>ETEINT</b><br>");
 
-  c += "Macro active : <b>";
+  c += F("Macro active : <b>");
 
   if (activeMacro >= 0 && activeMacro < MACRO_COUNT) {
     c += htmlEscape(String(config.macro[activeMacro].name));
   } else {
-    c += "Aucune";
+    c += F("Aucune");
   }
 
-  c += "</b><br>Sortie LED : <b>";
+  c += F("</b><br>Sortie LED : <b>");
   c += rgbToHex(currentLedR,currentLedG,currentLedB);
-  c += " / ";
+  c += F(" / ");
   c += String(currentLedIntensity);
-  c += "%</b></div></div>";
-  c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px' href='/diagnostics'>RAFRAICHIR</a>";
-  c += "</div></body></html>";
+  c += F("%</b></div></div>");
+  c += F("<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px' href='/diagnostics'>RAFRAICHIR</a>");
+  c += F("</div></body></html>");
 
   sendHtmlChunk(c);
   endChunkedHtml();
@@ -5044,6 +5058,7 @@ window.addEventListener('beforeunload',e=>{if(uploading){e.preventDefault();e.re
 )FWPAGE";
 
 void sendFirmwarePage() {
+  if(!webMemoryReady())return;
   server.sendHeader("Cache-Control", "no-store");
   server.send_P(200, PSTR("text/html; charset=utf-8"), FIRMWARE_PAGE);
 }
@@ -5069,8 +5084,8 @@ static const char IOS_CAPTIVE_PAGE[] PROGMEM = R"PORTAL(
 <!doctype html><html lang='fr'><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
 <meta http-equiv='Cache-Control' content='no-store'>
-<meta http-equiv='refresh' content='1;url=http://192.168.4.1/settings'>
-<title>ON AIR - Configuration Wi-Fi</title>
+
+<title>ON AIR - Accès au boîtier</title>
 <style>
 body{background:#0c1015;color:white;font-family:Arial,sans-serif;text-align:center;padding:28px 14px}
 main{max-width:420px;margin:20px auto;background:#171d24;border:1px solid #38414e;
@@ -5078,7 +5093,7 @@ border-radius:16px;padding:20px}a{display:block;color:white;text-decoration:none
 background:#236bc4;padding:15px;margin:12px 0;border-radius:12px;font-weight:bold}
 a.alt{background:#333c49}small{color:#afb9c5}
 </style></head><body><main>
-<h2>ON AIR</h2><p>Ouverture des parametres...</p>
+<h2>ON AIR</h2><p>ON AIR est prêt</p>
 <a href='http://192.168.4.1/settings'>OUVRIR LES PARAMETRES</a>
 <a class='alt' href='http://192.168.4.1/'>OUVRIR LE CONTROLE</a>
 <small>En cas de blocage, utilise http://192.168.4.1/settings</small>
@@ -5111,9 +5126,8 @@ void redirectCaptivePortal() {
   server.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   server.sendHeader("Connection", "close");
   // Certaines versions de CNA ne suivent pas les redirections a corps vide.
-  server.send(302, "text/html; charset=utf-8",
-              "<!doctype html><html><body><a href='http://192.168.4.1/captive'>"
-              "ON AIR - Ouvrir la configuration</a></body></html>");
+  server.send_P(302,PSTR("text/html; charset=utf-8"),PSTR("<!doctype html><html><body><a href='http://192.168.4.1/captive'>"
+              "ON AIR - Ouvrir la configuration</a></body></html>"));
 }
 
 // Shared, named library: 16 slots, one atomic file = 64-byte name + checked cues.
@@ -5156,8 +5170,8 @@ bool libraryNamesEqual(const char* a,const char* b){
 String libraryOptions(uint8_t selected){
   String out;char name[64];
   for(uint8_t id=32;id<48;id++)if(libraryReadName(id,name)){
-    out+="<option value='";out+=String(id);out+="'";if(id==selected)out+=" selected";
-    out+=">";out+=htmlEscape(String(name));out+="</option>";
+    out += F("<option value='");out+=String(id);out += F("'");if(id==selected)out += F(" selected");
+    out += F(">");out+=htmlEscape(String(name));out += F("</option>");
   }
   return out;
 }
@@ -5189,50 +5203,50 @@ bool decodeCueRequest(uint8_t* data){
   return validCustom(data);
 }
 void handleLibraryList(){
-  String out="[";char name[64];bool first=true;
+  String out = F("[");char name[64];bool first=true;
   for(uint8_t id=32;id<48;id++)if(libraryReadName(id,name)){
-    if(!first)out+=",";first=false;out+="{\"id\":";out+=String(id);out+=",\"name\":\"";out+=jsonEscape(String(name));out+="\"}";
+    if(!first)out += F(",");first=false;out += F("{\"id\":");out+=String(id);out += F(",\"name\":\"");out+=jsonEscape(String(name));out += F("\"}");
   }
-  out+="]";server.sendHeader("Cache-Control","no-store");server.send(200,"application/json",out);
+  out += F("]");server.sendHeader("Cache-Control","no-store");server.send(200,"application/json",out);
 }
 void handleLibraryGet(){
   int id=server.arg("id").toInt();char name[64];
-  if(!isLibraryId(id)||!libraryReadName(id,name)){server.send(404,"text/plain","Animation introuvable");return;}
+  if(!isLibraryId(id)||!libraryReadName(id,name)){server.send_P(404,PSTR("text/plain"),PSTR("Animation introuvable"));return;}
   char path[24];snprintf(path,sizeof(path),"/anim%u.bin",id);File f=LittleFS.open(path,"r");uint8_t header[64];
-  if(!f||f.read(header,64)!=64){server.send(500,"text/plain","Lecture impossible");return;}
-  server.sendHeader("Cache-Control","no-store");server.setContentLength(1356);server.send(200,"application/octet-stream","");
+  if(!f||f.read(header,64)!=64){server.send_P(500,PSTR("text/plain"),PSTR("Lecture impossible"));return;}
+  server.sendHeader("Cache-Control","no-store");server.setContentLength(1356);server.send_P(200,PSTR("application/octet-stream"),PSTR(""));
   uint8_t chunk[256];while(f.available()){size_t n=f.read(chunk,sizeof(chunk));if(!n)break;server.client().write(chunk,n);}f.close();
 }
 void handleLibrarySave(){
   String name=server.arg("name");name.trim();
-  if(!name.length()){server.send(400,"text/plain","Veuillez renseigner un nom pour l’animation.");return;}
-  if(!validLibraryName(name.c_str())){server.send(400,"text/plain","Veuillez choisir un nom plus court, sans retour à la ligne.");return;}
+  if(!name.length()){server.send_P(400,PSTR("text/plain"),PSTR("Veuillez renseigner un nom pour l’animation."));return;}
+  if(!validLibraryName(name.c_str())){server.send_P(400,PSTR("text/plain"),PSTR("Veuillez choisir un nom plus court, sans retour à la ligne."));return;}
   int requested=server.hasArg("id")?server.arg("id").toInt():-1;
-  if(requested!=-1&&!isLibraryId(requested)){server.send(400,"text/plain","Animation invalide");return;}
+  if(requested!=-1&&!isLibraryId(requested)){server.send_P(400,PSTR("text/plain"),PSTR("Animation invalide"));return;}
   char previous[64];int freeId=-1;
-  if(requested!=-1&&!libraryReadName(requested,previous)){server.send(404,"text/plain","Cette animation n’existe plus");return;}
+  if(requested!=-1&&!libraryReadName(requested,previous)){server.send_P(404,PSTR("text/plain"),PSTR("Cette animation n’existe plus"));return;}
   for(uint8_t id=32;id<48;id++){
     if(libraryReadName(id,previous)){
-      if(id!=requested&&libraryNamesEqual(previous,name.c_str())){server.send(409,"text/plain","Ce nom est déjà utilisé. Veuillez saisir un nom différent.");return;}
+      if(id!=requested&&libraryNamesEqual(previous,name.c_str())){server.send_P(409,PSTR("text/plain"),PSTR("Ce nom est déjà utilisé. Veuillez saisir un nom différent."));return;}
     }else if(freeId<0)freeId=id;
   }
   int id=requested==-1?freeId:requested;
-  if(id<0){server.send(409,"text/plain","La bibliothèque contient déjà 16 animations. Supprimez une séquence pour en ajouter une.");return;}
-  uint8_t data[1356];if(!decodeCueRequest(data)){server.send(400,"text/plain","Séquence invalide");return;}
-  if(!libraryWrite(id,name.c_str(),data)){server.send(500,"text/plain","Enregistrement impossible. La séquence précédente est conservée.");return;}
-  server.send(200,"application/json",String("{\"id\":")+String(id)+"}");
+  if(id<0){server.send_P(409,PSTR("text/plain"),PSTR("La bibliothèque contient déjà 16 animations. Supprimez une séquence pour en ajouter une."));return;}
+  uint8_t data[1356];if(!decodeCueRequest(data)){server.send_P(400,PSTR("text/plain"),PSTR("Séquence invalide"));return;}
+  if(!libraryWrite(id,name.c_str(),data)){server.send_P(500,PSTR("text/plain"),PSTR("Enregistrement impossible. La séquence précédente est conservée."));return;}
+  server.send(200,"application/json",String(F("{\"id\":"))+String(id)+"}");
 }
 void handleLibraryDelete(){
   int id=server.arg("id").toInt();char name[64];
-  if(!isLibraryId(id)||!libraryReadName(id,name)){server.send(404,"text/plain","Animation introuvable");return;}
+  if(!isLibraryId(id)||!libraryReadName(id,name)){server.send_P(404,PSTR("text/plain"),PSTR("Animation introuvable"));return;}
   MotionSettings previous=motionSettings;
   for(uint8_t i=0;i<MACRO_COUNT;i++)if(motionSettings.mode[i]==id)motionSettings.mode[i]=0;
-  if(!saveMotionSettings()){motionSettings=previous;server.send(500,"text/plain","Suppression impossible");return;}
+  if(!saveMotionSettings()){motionSettings=previous;server.send_P(500,PSTR("text/plain"),PSTR("Suppression impossible"));return;}
   for(uint8_t i=0;i<MACRO_COUNT;i++)if(config.macro[i].alertAnimation==id)config.macro[i].alertAnimation=ALERT_CLASSIC;
   saveConfig();char path[24];snprintf(path,sizeof(path),"/anim%u.bin",id);
-  if(!LittleFS.remove(path)){server.send(500,"text/plain","Suppression du fichier impossible");return;}
+  if(!LittleFS.remove(path)){server.send_P(500,PSTR("text/plain"),PSTR("Suppression du fichier impossible"));return;}
   if(customOwner==id)customOwner=-1;
-  if(!settingsPreviewActive&&!alertRunning)renderCurrentOutput();server.send(200,"text/plain","Animation supprimée");
+  if(!settingsPreviewActive&&!alertRunning)renderCurrentOutput();server.send_P(200,PSTR("text/plain"),PSTR("Animation supprimée"));
 }
 void stopLibraryPreview(){
   if(!libraryPreviewActive)return;
@@ -5254,27 +5268,27 @@ void updateLibraryPreview(){
 }
 void handleLibraryPreview(){
   String token=server.arg("token");
-  if(!token.length()||token.length()>40){server.send(400,"text/plain","Session invalide");return;}
+  if(!token.length()||token.length()>40){server.send_P(400,PSTR("text/plain"),PSTR("Session invalide"));return;}
   if(libraryPreviewActive&&!settingsPreviewActive){strncpy(libraryPreviewRevokedToken,libraryPreviewToken,40);libraryPreviewActive=false;libraryPreviewToken[0]=0;customOwner=-1;}
-  if(token==libraryPreviewRevokedToken){server.send(409,"text/plain","Aperçu interrompu. Réactivez l’interrupteur pour reprendre.");return;}
-  if(libraryPreviewActive&&token!=libraryPreviewToken){server.send(409,"text/plain","Un autre aperçu est déjà actif");return;}
-  if(outputEnabled||alertRunning){server.send(409,"text/plain","Arrêtez le direct ou l’alerte avant d’activer l’aperçu.");return;}
-  uint8_t data[1356];if(!decodeCueRequest(data)){server.send(400,"text/plain","Séquence invalide");return;}
-  int cue=server.arg("cue").toInt();if(cue<0||cue>=data[5]){server.send(400,"text/plain","Étape invalide");return;}
+  if(token==libraryPreviewRevokedToken){server.send_P(409,PSTR("text/plain"),PSTR("Aperçu interrompu. Réactivez l’interrupteur pour reprendre."));return;}
+  if(libraryPreviewActive&&token!=libraryPreviewToken){server.send_P(409,PSTR("text/plain"),PSTR("Un autre aperçu est déjà actif"));return;}
+  if(outputEnabled||alertRunning){server.send_P(409,PSTR("text/plain"),PSTR("Arrêtez le direct ou l’alerte avant d’activer l’aperçu."));return;}
+  uint8_t data[1356];if(!decodeCueRequest(data)){server.send_P(400,PSTR("text/plain"),PSTR("Séquence invalide"));return;}
+  int cue=server.arg("cue").toInt();if(cue<0||cue>=data[5]){server.send_P(400,PSTR("text/plain"),PSTR("Étape invalide"));return;}
   cancelStartupIndicator();settingsPreviewActive=true;customPreview=false;
   memcpy(customData,data,1356);customOwner=-2;customValid=true;
   libraryPreviewActive=true;strlcpy(libraryPreviewToken,token.c_str(),sizeof(libraryPreviewToken));
   libraryPreviewCue=cue;libraryPreviewPlaying=server.arg("play")=="1";
   unsigned long elapsed=constrain(server.arg("elapsed").toInt(),0,1000000);
   libraryPreviewStarted=millis()-elapsed;libraryPreviewLastFrame=millis()-33UL;
-  settingsPreviewUntil=millis()+3000UL;updateLibraryPreview();server.send(200,"text/plain","Aperçu actif");
+  settingsPreviewUntil=millis()+3000UL;updateLibraryPreview();server.send_P(200,PSTR("text/plain"),PSTR("Aperçu actif"));
 }
 void handleLibraryPreviewPing(){
-  if(!libraryPreviewActive||!settingsPreviewActive||customOwner!=-2||server.arg("token")!=libraryPreviewToken){server.send(409,"text/plain","Aperçu interrompu");return;}
-  settingsPreviewUntil=millis()+3000UL;server.send(200,"text/plain","OK");
+  if(!libraryPreviewActive||!settingsPreviewActive||customOwner!=-2||server.arg("token")!=libraryPreviewToken){server.send_P(409,PSTR("text/plain"),PSTR("Aperçu interrompu"));return;}
+  settingsPreviewUntil=millis()+3000UL;server.send_P(200,PSTR("text/plain"),PSTR("OK"));
 }
 void handleLibraryPreviewStop(){
-  if(server.arg("token")==libraryPreviewToken)stopLibraryPreview();server.send(200,"text/plain","OK");
+  if(server.arg("token")==libraryPreviewToken)stopLibraryPreview();server.send_P(200,PSTR("text/plain"),PSTR("OK"));
 }
 
 static const char ANIMATION_EDITOR_HTML[] PROGMEM = R"EDITOR(<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Animation · ON AIR</title><script>try{document.documentElement.dataset.theme=localStorage.getItem('onair-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script><link rel="stylesheet" href="/style.css"><style>
@@ -5392,44 +5406,45 @@ window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.return
 refresh();refreshLibrary().catch(e=>{$('status').textContent=e.message;});
 </script></html>)EDITOR";
 void sendAnimationPage(){
+  if(!webMemoryReady())return;
   server.sendHeader("Cache-Control","no-store");server.send_P(200,"text/html; charset=utf-8",ANIMATION_EDITOR_HTML);
 }
 
 void handleCustomGet(){
-  uint8_t i;if(!parseMacroIndex(i)){server.send(400,"text/plain","Émission invalide");return;}
+  uint8_t i;if(!parseMacroIndex(i)){server.send_P(400,PSTR("text/plain"),PSTR("Émission invalide"));return;}
   i+=server.arg("kind")=="alert"?MACRO_COUNT:0;
   char path[24];snprintf(path,sizeof(path),"/custom%u.bin",i);
   File f=LittleFS.open(path,"r");
-  if(!f){server.send(204,"text/plain","");return;}
+  if(!f){server.send_P(204,PSTR("text/plain"),PSTR(""));return;}
   server.streamFile(f,"application/octet-stream");f.close();
 }
 void handleCustomSave(){
-  uint8_t i;if(!parseMacroIndex(i)){server.send(400,"text/plain","Émission invalide");return;}
+  uint8_t i;if(!parseMacroIndex(i)){server.send_P(400,PSTR("text/plain"),PSTR("Émission invalide"));return;}
   i+=server.arg("kind")=="alert"?MACRO_COUNT:0;
   String hex=server.arg("data");
-  if(hex.length()!=2712){server.send(400,"text/plain","Taille invalide");return;}
+  if(hex.length()!=2712){server.send_P(400,PSTR("text/plain"),PSTR("Taille invalide"));return;}
   uint8_t data[1356];
   for(size_t n=0;n<sizeof(data);n++){
     char a=hex[n*2],b=hex[n*2+1];
     int hi=a>='0'&&a<='9'?a-'0':a>='a'&&a<='f'?a-'a'+10:-1;
     int lo=b>='0'&&b<='9'?b-'0':b>='a'&&b<='f'?b-'a'+10:-1;
-    if(hi<0||lo<0){server.send(400,"text/plain","Format invalide");return;}data[n]=(hi<<4)|lo;
+    if(hi<0||lo<0){server.send_P(400,PSTR("text/plain"),PSTR("Format invalide"));return;}data[n]=(hi<<4)|lo;
   }
-  if(!validCustom(data)){server.send(400,"text/plain","Animation invalide");return;}
+  if(!validCustom(data)){server.send_P(400,PSTR("text/plain"),PSTR("Animation invalide"));return;}
   char path[24],temp[24];snprintf(path,sizeof(path),"/custom%u.bin",i);snprintf(temp,sizeof(temp),"/custom%u.tmp",i);
   File f=LittleFS.open(temp,"w");bool ok=f&&f.write(data,sizeof(data))==sizeof(data);f.flush();f.close();
-  if(!ok||!LittleFS.rename(temp,path)){server.send(500,"text/plain","Enregistrement impossible");return;}
-  customOwner=-1;server.send(200,"text/plain","Enregistré");
+  if(!ok||!LittleFS.rename(temp,path)){server.send_P(500,PSTR("text/plain"),PSTR("Enregistrement impossible"));return;}
+  customOwner=-1;server.send_P(200,PSTR("text/plain"),PSTR("Enregistré"));
 }
 void handleCustomTest(){
-  uint8_t i;if(!parseMacroIndex(i)){server.send(400,"text/plain","Émission invalide");return;}
-  if(outputEnabled||alertRunning){server.send(409,"text/plain","Arrêtez le direct avant le test");return;}
+  uint8_t i;if(!parseMacroIndex(i)){server.send_P(400,PSTR("text/plain"),PSTR("Émission invalide"));return;}
+  if(outputEnabled||alertRunning){server.send_P(409,PSTR("text/plain"),PSTR("Arrêtez le direct avant le test"));return;}
   bool alert=server.arg("kind")=="alert";
-  if(!loadCustom(i+(alert?MACRO_COUNT:0))){server.send(400,"text/plain","Enregistrez une animation");return;}
+  if(!loadCustom(i+(alert?MACRO_COUNT:0))){server.send_P(400,PSTR("text/plain"),PSTR("Enregistrez une animation"));return;}
   // Preview uses the normal bounded preview scheduler, without changing saved settings.
   showMacroPreview(i,true);previewMotionMacro=i;previewMotionDirect=true;
   customPreview=true;customPreviewAlert=alert;renderCustomOutput(i,0,alert);settingsPreviewUntil=millis()+15000UL;
-  server.send(200,"text/plain","Test : 15 secondes maximum");
+  server.send_P(200,PSTR("text/plain"),PSTR("Test : 15 secondes maximum"));
 }
 
 // BEGIN OTA STATE
@@ -5498,13 +5513,13 @@ void handleFirmwareUpload(){
 void handleFirmwareComplete(){
   otaRequestOpen=false;
   server.sendHeader("Cache-Control","no-store");server.sendHeader("Connection","close");
-  if(otaRejected||otaRestartAt){server.send(409,"application/json","{\"ok\":false,\"error\":\"Une mise à jour est déjà en cours.\"}");return;}
+  if(otaRejected||otaRestartAt){server.send_P(409,PSTR("application/json"),PSTR("{\"ok\":false,\"error\":\"Une mise à jour est déjà en cours.\"}"));return;}
   if(!otaValidated||otaError[0]){
     if(!otaError[0])otaFail("Aucun firmware validé n’a été reçu.");
-    server.send(400,"application/json",String("{\"ok\":false,\"error\":\"")+jsonEscape(String(otaError))+"\"}");return;
+    server.send(400,"application/json",String(F("{\"ok\":false,\"error\":\""))+jsonEscape(String(otaError))+"\"}");return;
   }
   server.client().setNoDelay(true);
-  server.send(200,"application/json",String("{\"ok\":true,\"md5\":\"")+otaExpectedMD5+"\"}");
+  server.send(200,"application/json",String(F("{\"ok\":true,\"md5\":\""))+otaExpectedMD5+"\"}");
   // The acknowledgement is sent first; the main loop restarts later without animations.
   otaRestartAt=millis()+1800UL;
 }
@@ -5527,13 +5542,17 @@ void handleFirmwareStatus(){
   String verified;
   if(server.hasArg("verify_size")&&!otaReceiving&&!otaRestartAt)verified=firmwareFlashMD5(server.arg("verify_size").toInt(),server.hasArg("flash_mode")?server.arg("flash_mode").toInt():-1);
   String state=otaReceiving?"receiving":otaRestartAt?"ready":otaError[0]?"error":"idle";
-  String out="{\"boot\":\"";out+=String(otaBootId,HEX);out+="\",\"version\":\"";out+=FIRMWARE_VERSION;
-  out+="\",\"state\":\"";out+=state;out+="\",\"session\":\"";out+=jsonEscape(String(otaSession));
-  out+="\",\"error\":\"";out+=jsonEscape(String(otaError));out+="\",\"verified_md5\":\"";out+=verified;out+="\"}";
+  String out = F("{\"boot\":\"");out+=String(otaBootId,HEX);out += F("\",\"version\":\"");out+=FIRMWARE_VERSION;
+  out += F("\",\"state\":\"");out+=state;out += F("\",\"session\":\"");out+=jsonEscape(String(otaSession));
+  out += F("\",\"error\":\"");out+=jsonEscape(String(otaError));out += F("\",\"verified_md5\":\"");out+=verified;out += F("\"}");
   server.sendHeader("Cache-Control","no-store");server.send(200,"application/json",out);
 }
 
 void setupWebServer() {
+  server.on("/health",HTTP_GET,handleHealth);
+  server.on("/api/health",HTTP_GET,handleHealth);
+  server.on("/favicon.ico",HTTP_GET,[](){server.send(204,"text/plain","");});
+  server.on("/apple-touch-icon.png",HTTP_GET,[](){server.send(204,"text/plain","");});
   server.on("/api/library",HTTP_GET,handleLibraryList);
   server.on("/api/library/get",HTTP_GET,handleLibraryGet);
   server.on("/api/library/save",HTTP_POST,handleLibrarySave);
@@ -5553,14 +5572,14 @@ void setupWebServer() {
 
   server.on("/macro",HTTP_GET,[](){
     if (!server.hasArg("i")) {
-      server.send(400,"text/plain","Macro invalide");
+      server.send_P(400,PSTR("text/plain"),PSTR("Macro invalide"));
       return;
     }
 
     int i = server.arg("i").toInt();
 
     if (i < 0 || i >= MACRO_COUNT) {
-      server.send(400,"text/plain","Macro invalide");
+      server.send_P(400,PSTR("text/plain"),PSTR("Macro invalide"));
       return;
     }
 
@@ -5568,7 +5587,7 @@ void setupWebServer() {
   });
   server.on("/ping",HTTP_GET,[](){
     server.sendHeader("Connection","close");
-    server.send(200,"text/plain","ON_AIR-MOC OK");
+    server.send_P(200,PSTR("text/plain"),PSTR("ON_AIR-MOC OK"));
   });
 
   server.on("/diagnostics",HTTP_GET,sendDiagnosticsPage);
@@ -5577,7 +5596,7 @@ void setupWebServer() {
   server.on("/config/import",HTTP_POST,handleConfigImportComplete,handleConfigImportData);
   server.on("/api/status",HTTP_GET,handleStatus);
   server.on("/api/uihealth",HTTP_GET,[](){
-    server.send(200,"application/json","{\"css\":true,\"version\":\"2.13\"}");
+    server.send_P(200,PSTR("application/json"),PSTR("{\"css\":true,\"version\":\"2.13\"}"));
   });
   server.on("/api/direct",HTTP_GET,handleDirect);
   server.on("/api/alert",HTTP_GET,handleAlert);
@@ -5644,16 +5663,16 @@ void setupWebServer() {
   // Les clients connectes a l'AP utilisent l'ESP comme DNS et tous les domaines
   // inconnus sont renvoyes vers 192.168.4.1.
   dnsServer.start(53, "*", AP_IP);
-  Serial.println("[CAPTIVE] DNS wildcard actif sur 192.168.4.1");
+  Serial.println(F("[CAPTIVE] DNS wildcard actif sur 192.168.4.1"));
 
   server.begin();
-  Serial.println("[WEB] Serveur HTTP demarre");
-  Serial.println("[OTA] Interface : /update");
+  Serial.println(F("[WEB] Serveur HTTP demarre"));
+  Serial.println(F("[OTA] Interface : /update"));
 }
 
 void startAccessPoint() {
   Serial.println();
-  Serial.println("[WIFI AP] Initialisation...");
+  Serial.println(F("[WIFI AP] Initialisation..."));
 
   WiFi.persistent(false);
   WiFi.mode(WIFI_OFF);
@@ -5678,18 +5697,18 @@ void startAccessPoint() {
   delay(300);
 
   if (ok) {
-    Serial.println("[WIFI AP] OK");
+    Serial.println(F("[WIFI AP] OK"));
     Serial.println("[WIFI AP] SSID = " + String(config.apSSID));
     Serial.println("[WIFI AP] IP = " + WiFi.softAPIP().toString());
 
     // Priorite a la reactivite de l'interface.
     WiFi.setSleepMode(WIFI_NONE_SLEEP);
-    Serial.println("[WIFI AP] Sleep Wi-Fi desactive pour stabilite");
+    Serial.println(F("[WIFI AP] Sleep Wi-Fi desactive pour stabilite"));
 
   } else {
     setStartupIndicatorState(STARTUP_IND_ERROR);
-    Serial.println("[WIFI AP] ECHEC du reseau securise");
-    Serial.println("[WIFI AP] Tentative ONAIR-RECOVERY sans mot de passe");
+    Serial.println(F("[WIFI AP] ECHEC du reseau securise"));
+    Serial.println(F("[WIFI AP] Tentative ONAIR-RECOVERY sans mot de passe"));
 
     WiFi.softAPdisconnect(true);
     delay(250);
@@ -5700,11 +5719,11 @@ void startAccessPoint() {
     bool recoveryOK = WiFi.softAP("ONAIR-RECOVERY", nullptr, 6, false, 4);
 
     if (recoveryOK) {
-      Serial.println("[WIFI AP] RECOVERY OK");
+      Serial.println(F("[WIFI AP] RECOVERY OK"));
       Serial.println("[WIFI AP] IP = " + WiFi.softAPIP().toString());
       WiFi.setSleepMode(WIFI_NONE_SLEEP);
     } else {
-      Serial.println("[WIFI AP] ECHEC TOTAL");
+      Serial.println(F("[WIFI AP] ECHEC TOTAL"));
     }
   }
 }
@@ -5715,7 +5734,7 @@ bool connectBestKnownWiFi() {
   }
 
   Serial.println();
-  Serial.println("[WIFI EXT] Recherche du meilleur reseau memorise...");
+  Serial.println(F("[WIFI EXT] Recherche du meilleur reseau memorise..."));
 
   if (WiFi.getMode() != WIFI_AP_STA) {
     WiFi.mode(WIFI_AP_STA);
@@ -5745,7 +5764,7 @@ bool connectBestKnownWiFi() {
   WiFi.scanDelete();
 
   if (bestKnown < 0) {
-    Serial.println("[WIFI EXT] Aucun reseau memorise disponible");
+    Serial.println(F("[WIFI EXT] Aucun reseau memorise disponible"));
     currentKnownWiFiAttempt = -1;
     return false;
   }
@@ -5781,7 +5800,7 @@ void applyPendingExternalWiFi() {
   pendingExternalWiFiApply = false;
 
   if (!config.externalWiFiEnabled) {
-    Serial.println("[WIFI EXT] Desactivation a chaud");
+    Serial.println(F("[WIFI EXT] Desactivation a chaud"));
 
     // Deconnecte uniquement la partie station.
     WiFi.disconnect(false);
@@ -5798,7 +5817,7 @@ void applyPendingExternalWiFi() {
   }
 
   if (config.knownWiFiCount == 0) {
-    Serial.println("[WIFI EXT] Aucun reseau memorise a appliquer");
+    Serial.println(F("[WIFI EXT] Aucun reseau memorise a appliquer"));
     return;
   }
 
@@ -5850,12 +5869,12 @@ void applyPendingExternalWiFi() {
 
 void startExternalWiFi() {
   if (!config.externalWiFiEnabled) {
-    Serial.println("[WIFI EXT] Desactive");
+    Serial.println(F("[WIFI EXT] Desactive"));
     return;
   }
 
   if (config.knownWiFiCount == 0) {
-    Serial.println("[WIFI EXT] Aucun Wi-Fi memorise");
+    Serial.println(F("[WIFI EXT] Aucun Wi-Fi memorise"));
     return;
   }
 
@@ -5883,10 +5902,10 @@ void startMDNSIfPossible() {
     MDNS.addService("http", "tcp", 80);
     mdnsStarted = true;
 
-    Serial.println("[mDNS] OK");
+    Serial.println(F("[mDNS] OK"));
     Serial.println("[mDNS] http://" + String(MDNS_HOSTNAME) + ".local");
   } else {
-    Serial.println("[mDNS] ECHEC");
+    Serial.println(F("[mDNS] ECHEC"));
   }
 }
 
@@ -5927,23 +5946,25 @@ void setup() {
   Serial.begin(115200);
   delay(150);
   Serial.println();
-  Serial.println("===========================================");
-  Serial.println(" CARAC ON AIR MANUAL - ESP8266");
+  Serial.println(F("==========================================="));
+  Serial.println(F(" CARAC ON AIR MANUAL - ESP8266"));
   Serial.println(" Firmware " + String(FIRMWARE_VERSION));
-  Serial.println("===========================================");
+  Serial.println(F("==========================================="));
 
   pixels.begin();
   pixels.setBrightness(255);
   pixels.clear();
   pixels.show();
 
-  Serial.println("[LED] WS2812E adressable");
-  Serial.println("[LED] D5 / GPIO14 | 36 LED | GRB 800 kHz");
+  Serial.println(F("[LED] WS2812E adressable"));
+  Serial.println(F("[LED] D5 / GPIO14 | 36 LED | GRB 800 kHz"));
   Serial.println("[LED SAFETY] Limite globale sortie = " + String(LED_GLOBAL_MAX_PERCENT) + "%");
 
-  if (!LittleFS.begin()) Serial.println("[FS] ECHEC LittleFS");
-  else Serial.println("[FS] LittleFS OK");
+  if (!LittleFS.begin()) Serial.println(F("[FS] ECHEC LittleFS"));
+  else Serial.println(F("[FS] LittleFS OK"));
 
+  Serial.printf_P(PSTR("[BOOT] reset=%s | heap=%u | maxblock=%u\n"),ESP.getResetReason().c_str(),ESP.getFreeHeap(),ESP.getMaxFreeBlockSize());
+  Serial.println(ESP.getResetInfo());
   loadConfig();
   loadMotionSettings();
   migrateAnimationLibrary();
@@ -5966,18 +5987,20 @@ void setup() {
   }
 
   Serial.println("[READY] Wi-Fi autonome : " + String(config.apSSID));
-  Serial.println("[READY] Acces direct GARANTI : http://192.168.4.1");
-  Serial.println("[READY] .local uniquement sur le Wi-Fi externe");
+  Serial.println(F("[READY] Acces direct GARANTI : http://192.168.4.1"));
+  Serial.println(F("[READY] .local uniquement sur le Wi-Fi externe"));
   if (config.externalWiFiEnabled) {
     Serial.println("[READY] Wi-Fi memorises : " + String(config.knownWiFiCount));
-    Serial.println("[READY] Acces stable via routeur : http://onair-moc.local");
+    Serial.println(F("[READY] Acces stable via routeur : http://onair-moc.local"));
   }
+  Serial.printf_P(PSTR("[MEMORY] ready heap=%u maxblock=%u stack=%u\n"),ESP.getFreeHeap(),ESP.getMaxFreeBlockSize(),ESP.getFreeContStack());
   // Start the cinematic clock only after blocking hardware/network setup.
   if(config.startupAnimation)startupAnimation();
 }
 
 void loop() {
   // Portail captif : traiter les requetes DNS avant le HTTP.
+  if(!webMinimumHeap||ESP.getFreeHeap()<webMinimumHeap)webMinimumHeap=ESP.getFreeHeap();
   dnsServer.processNextRequest();
 
   // Le serveur HTTP est toujours prioritaire.
@@ -6017,7 +6040,7 @@ void loop() {
           " | IP=" + WiFi.localIP().toString()
         );
       } else {
-        Serial.println("[WIFI EXT] NON CONNECTE");
+        Serial.println(F("[WIFI EXT] NON CONNECTE"));
       }
     }
   }

@@ -1,5 +1,13 @@
 # Changelog
 
+## V3.4.2 — Mémoire et navigation
+
+- textes HTML transférés en flash, buffers libérés avant transmission des scripts
+- contrôle du budget RAM à la compilation et refus HTTP 503 si mémoire insuffisante
+- diagnostic mémoire léger /health et journal de démarrage
+- suppression de la redirection automatique du portail vers les réglages
+
+
 ## V3.4.1 — Fiabilité OTA
 
 - suppression des animations et callbacks LED pendant la mise à jour

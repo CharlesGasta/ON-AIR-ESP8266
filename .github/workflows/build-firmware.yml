@@ -45,7 +45,8 @@ jobs:
           arduino-cli compile \
             --fqbn esp8266:esp8266:nodemcuv2 \
             --output-dir "$GITHUB_WORKSPACE/build" \
-            /tmp/ONAIR
+            /tmp/ONAIR 2>&1 | tee build/compile.log
+          python3 tools/check-memory.py build/compile.log
 
           cp ON_AIR_ESP8266.ino build/ON_AIR_ESP8266.ino
           cp build/ONAIR.ino.bin build/ON_AIR_ESP8266_OTA.bin

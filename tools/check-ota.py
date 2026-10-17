@@ -21,6 +21,8 @@ assert 'setRGBLevel' not in handlers and 'pixels.show' not in handlers and 'dela
 assert 'Update.on' not in s and 'otaVisual' not in s
 prefix=r'''
 #include <stdint.h>
+#define F(x) x
+#define PSTR(x) x
 #include <cstring>
 #include <string>
 #include <map>
@@ -51,6 +53,7 @@ struct{
  HTTPUpload& upload(){return ::upload;}
  void sendHeader(const char*,const char*){}
  void send(int c,const char*,const String& body){code=c;response=body;}
+ void send_P(int c,const char* type,const char* body){send(c,type,String(body));}
  auto& client(){return ::client;}
 } server;
 struct{
