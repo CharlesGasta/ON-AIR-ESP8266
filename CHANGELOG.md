@@ -1,5 +1,14 @@
 # Changelog
 
+## V3.1.0 — Studio mobile
+
+- refonte complète de la console mobile, réglages et éditeur des émissions
+- état du boîtier confirmé, gestion explicite des déconnexions, OFF / NOIR permanent dans la console
+- sauvegardes de réglages séquencées, erreurs visibles et reprise avant navigation
+- écran OTA avec progression ; gestionnaire de flash existant conservé
+- moteur LED, 36 pixels, 100 %, fonctions et paramètres sauvegardés inchangés
+- voir docs/releases/v3.1.0.md pour installation, tests et audit de la limite 25 %
+
 ## V3.0.4
 
 - dérivée de la V3.0.3, plafond global de luminosité porté de 50 à 100 % pour les 36 WS2812E

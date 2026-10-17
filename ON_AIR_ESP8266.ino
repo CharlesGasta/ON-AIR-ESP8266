@@ -33,7 +33,7 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.0.4 ADDRESSABLE LOGO 36LED 100PCT"
+#define FIRMWARE_VERSION "3.1.0 STUDIO MOBILE 36LED 100PCT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -2001,8 +2001,9 @@ uint8_t scaleByPercent(uint8_t value, uint8_t percent) {
   return (uint8_t)(((uint16_t)value * constrain((int)percent, 0, 100)) / 100U);
 }
 
-// Sortie 0..100% pour 36 LED alimentees directement en 5 V.
-// GND commun avec l'ESP ; ne pas faire transiter le courant LED par VV.
+// Sortie 0..100% pour les 36 LED du logo Damien.
+// Montage utilisateur USB-C / VV : 1,02 A mesure sur le ruban blanc 100%,
+// stable selon essai utilisateur ; courant admissible VV non documente.
 // Toute sortie LED passe par pixelColorLevel(), y compris les alertes
 // et les effets spatiaux (qui peuvent ignorer le curseur de macro).
 const uint8_t LED_GLOBAL_MAX_PERCENT = 100;
@@ -2639,215 +2640,90 @@ String mimeTypeForPath(String path) {
 }
 
 static const char COMMON_CSS[] PROGMEM = R"CSS(
-*{box-sizing:border-box}html,body{margin:0;padding:0;background:#090b0e;color:#f4f6f8;font-family:Arial,Helvetica,sans-serif}body{min-height:100vh}
-.top{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:rgba(9,11,14,.96);border-bottom:1px solid #252a31}
-.title{font-size:18px;font-weight:800;letter-spacing:.6px}.iconbtn{text-decoration:none;color:#fff;background:#1c222a;border:1px solid #343c46;border-radius:12px;padding:10px 13px;font-size:18px}
-.wrap{width:min(720px,100%);margin:auto;padding:14px}.card,.section{background:#14181d;border:1px solid #272e36;border-radius:16px;margin-bottom:14px;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,.20)}
-.section{padding:14px}.macrohead{display:flex;gap:12px;align-items:center;padding:14px}.logo,.nologo{width:64px;height:64px;border-radius:12px;background:#0b0d10;border:1px solid #303740}.logo{object-fit:contain}.nologo{display:flex;align-items:center;justify-content:center;font-size:11px;color:#747d88}
-.mname{flex:1;min-width:0}.mname h2{margin:0 0 6px;font-size:22px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.meta{font-size:13px;color:#9da6b0}.swatch{width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.35)}
-.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 14px 14px}
-button{border:0;border-radius:14px;font-weight:800;min-height:58px;font-size:17px;cursor:pointer;transition:background .10s ease,border-color .10s ease,opacity .10s ease,transform .08s ease}
-button:active{transform:scale(.985)}
-button:disabled{cursor:not-allowed;opacity:.32;transform:none}
-.direct{color:#fff;background:#3a3f46;border:2px solid #555d67}
-.direct.active{box-shadow:inset 0 0 0 2px rgba(255,255,255,.35),0 0 18px rgba(255,255,255,.10)}
-.alert{color:#111;background:#f4c542;border:2px solid #ffd960}
-.status{margin:10px 0 14px;text-align:center;color:#aeb7c1;font-size:14px}.alertbar{display:none;background:#f4c542;color:#111;padding:10px;text-align:center;font-weight:900}
-label{display:block;font-size:13px;color:#aeb7c1;margin:14px 0 6px}input,select{width:100%;background:#0e1115;color:#fff;border:1px solid #343c46;border-radius:10px;padding:12px;font-size:16px}input[type=color]{height:52px;padding:5px}input[type=range]{padding:0}.grid2,.testrow{display:grid;grid-template-columns:1fr 1fr;gap:12px}.save{width:100%;margin-top:16px;background:#2f80ed;color:#fff}.small{color:#8e98a3;font-size:12px;line-height:1.4}.danger{width:100%;background:#7d1d1d;color:#fff;margin-top:10px}.filebox{padding:10px;border:1px dashed #3a444f;border-radius:10px;background:#0e1115}
-.wifilist{display:flex;flex-direction:column;gap:8px}
-.wifirow{width:100%;min-height:52px;text-align:left;background:#0e1115;color:#fff;border:1px solid #343c46;border-radius:10px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px}
-.wifirow:active{transform:scale(.99)}
-.wifiname{font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wifimeta{font-size:12px;color:#9da6b0;white-space:nowrap}
-@media(max-width:520px){.wrap{padding:10px}.actions{gap:8px;padding:0 10px 10px}.macrohead{padding:10px}.mname h2{font-size:20px}button{font-size:16px}.grid2{grid-template-columns:1fr}}
+:root{color-scheme:dark;--bg:#101214;--panel:#1b1e22;--line:#33383e;--text:#f4f3ee;--muted:#a6adb6;--red:#ee544f;--amber:#f1bf67;--green:#8ed5b1;--radius:18px}
+*{box-sizing:border-box}[hidden]{display:none!important}html{scroll-behavior:smooth;scroll-padding-top:90px}html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}body{min-height:100vh;line-height:1.45;-webkit-tap-highlight-color:transparent}button,input,select{font:inherit}a{color:inherit}button,a,input,select,summary{touch-action:manipulation}button,a,input,select,summary:focus{outline-offset:4px}:focus-visible{outline:3px solid var(--amber);outline-offset:4px}button:focus:not(:focus-visible){outline:none}
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px max(18px,calc((100vw - 920px)/2));min-height:68px;background:#101214;border-bottom:1px solid var(--line)}.title{font-size:15px;font-weight:750;letter-spacing:.02em;min-width:0;overflow-wrap:anywhere}.brand{display:flex;gap:10px;align-items:center}.brandmark{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--red);color:#111;font-size:11px;font-weight:900;letter-spacing:-.6px}.brand small{display:block;color:var(--muted);font-size:11px;font-weight:450;letter-spacing:.02em;max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.iconbtn{display:inline-flex;align-items:center;justify-content:center;gap:7px;flex-shrink:0;text-decoration:none;color:var(--text);background:#23272c;border:1px solid var(--line);border-radius:12px;padding:10px 13px;min-height:44px;font-size:13px;font-weight:650}.iconbtn:hover{border-color:#747e89}
+.wrap{width:min(960px,100%);margin:auto;padding:24px 20px 40px}.control .wrap{padding-bottom:125px}.eyebrow{font-size:10px;font-weight:750;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}.hero{padding:0 0 22px}.hero-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.connection{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}.connection:before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}.connection[data-state=online]{color:var(--green)}.connection[data-state=offline]{color:var(--amber)}.hero h1{font-size:32px;letter-spacing:-1px;line-height:1.12;margin:0 0 8px;font-weight:750;overflow-wrap:anywhere}.hero p{margin:0;font-size:13px;color:var(--muted)}body[data-mode=live] .hero h1{color:var(--red)}body[data-mode=alert] .hero h1{color:var(--amber)}.bank-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}.bank-head h2{font-size:12px;font-weight:650;margin:0;letter-spacing:.08em;text-transform:uppercase}.textlink{font-size:12px;color:var(--muted);text-underline-offset:4px;min-height:30px;display:inline-flex;align-items:center}.macro-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;transition:border-color .15s}.card[data-active=true]{border-color:var(--red);box-shadow:inset 3px 0 var(--red)}.card[data-alert=true]{border-color:var(--amber);box-shadow:inset 3px 0 var(--amber)}.macrohead{display:flex;gap:12px;align-items:center;padding:16px 16px 12px}.logo,.nologo{flex-shrink:0;width:48px;height:48px;border-radius:12px;background:#fff;border:1px solid #ffffff16}.logo{object-fit:contain;padding:5px}.nologo{display:grid;place-items:center;color:#a6adb6;background:#272c32;font-size:19px;font-weight:650}.mname{flex:1;min-width:0}.mname h2{margin:0 0 3px;font-size:19px;font-weight:700;letter-spacing:-.5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.meta{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap}.swatch{display:inline-block;width:7px;height:7px;border-radius:50%;border:1px solid #ffffff55;flex-shrink:0}.channel-info{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}.channel-no{font-size:10px;color:#a6adb6;align-self:flex-start;font-variant-numeric:tabular-nums;letter-spacing:.08em}.card-state{font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.07em;margin-left:auto}.card[data-active=true] .card-state{color:var(--red)}.card[data-alert=true] .card-state{color:var(--amber)}.actions{display:grid;grid-template-columns:1.15fr 1fr;gap:8px;padding:0 16px 16px}
+button{border:1px solid transparent;border-radius:12px;min-height:48px;padding:11px 14px;font-size:14px;font-weight:650;cursor:pointer;transition:background .12s,border-color .12s,opacity .12s,transform .08s}button:active{transform:translateY(1px)}button:disabled{cursor:not-allowed;opacity:.4;transform:none}.direct{color:var(--text);background:#30363d;border-color:#454d57}.direct.active{box-shadow:inset 0 0 0 1px #ffffff65}.alert{color:var(--amber);background:#342c20;border-color:#6e5632}.alert.active{background:var(--amber);color:#20180c;border-color:var(--amber)}.direct:hover:not(:disabled){border-color:#a6adb6}.alert:hover:not(:disabled){border-color:var(--amber)}.alertbar{display:none;margin:0 0 14px;padding:12px 14px;background:#342c20;border:1px solid #6e5632;border-radius:12px;color:var(--amber);font-size:13px;font-weight:600}.transport{position:fixed;bottom:0;left:0;right:0;z-index:30;border-top:1px solid var(--line);background:#101214;padding:12px 20px max(12px,env(safe-area-inset-bottom))}.transport-inner{width:min(920px,100%);margin:auto;display:flex;align-items:center;gap:18px}.transport-copy{flex:1}.transport-copy b{display:block;font-size:12px}.transport-copy span{display:block;color:var(--muted);font-size:11px}.blackout{flex:1;max-width:360px;min-height:52px;background:#f4f3ee;border:1px solid #f4f3ee;color:#151719;font-size:14px;font-weight:800;letter-spacing:.04em}.blackout small{font-weight:450;letter-spacing:0;margin-left:8px}.feedback{min-height:20px;font-size:12px;color:var(--amber);margin-top:12px}.status{color:var(--muted);font-size:13px}.section{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:16px;padding:20px;overflow:hidden}.section h2{margin:0 0 10px;font-size:20px;letter-spacing:-.4px}.section h3{font-size:14px;font-weight:750;letter-spacing:.04em}.section>p{color:var(--muted);font-size:13px}.section label{display:block;font-size:13px;color:#c6cbd2;margin:18px 0 7px}.section input,.section select{width:100%;min-width:0;min-height:48px;background:#121518;color:var(--text);border:1px solid #454d57;border-radius:10px;padding:12px;font-size:16px}.section input[type=checkbox]{width:20px!important;min-height:20px;height:20px;vertical-align:middle;accent-color:var(--red)}.section input[type=color]{height:52px;padding:5px;cursor:pointer}.section input[type=range]{padding:0;min-height:44px;accent-color:var(--red);border:0;background:transparent}.section input[type=file]{font-size:13px;padding:10px;max-width:100%}.section input::file-selector-button{background:#30363d;color:var(--text);border:0;border-radius:6px;padding:7px;margin-right:8px}.grid2,.testrow{display:grid;grid-template-columns:1fr 1fr;gap:14px}.testrow{margin-top:16px}.save{display:block;width:100%;margin-top:16px;background:#e5e9ed;color:#171b20;border:1px solid #e5e9ed;border-radius:12px;font-size:13px;font-weight:700;min-height:48px}.small{color:var(--muted);font-size:12px;line-height:1.65;overflow-wrap:anywhere}.danger{width:100%;background:#352023;color:#ffb3ae;border:1px solid #6d363a;margin-top:10px;font-size:13px}.filebox{padding:16px;border:1px dashed #4b535e;border-radius:12px;background:#15181c}.wifilist{display:flex;flex-direction:column;gap:8px}.wifirow{width:100%;min-height:64px;text-align:left;background:#15181c;color:var(--text);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px}.wifiname{font-weight:650;font-size:14px;overflow-wrap:anywhere}.wifimeta{font-size:11px;color:var(--muted);white-space:normal;line-height:1.6}.settings-intro{margin:0 0 22px}.settings-intro h1{font-size:30px;letter-spacing:-.8px;margin:4px 0}.settings-intro p{font-size:13px;color:var(--muted);margin:0}.jumpnav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 22px}.jumpnav a{text-decoration:none;padding:9px 13px;background:#23272c;border:1px solid var(--line);border-radius:30px;font-size:12px;min-height:40px;display:flex;align-items:center}.section summary{cursor:pointer;font-size:16px;font-weight:650;min-height:28px;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px}.section summary::-webkit-details-marker{display:none}.section summary:after{content:'+';font-size:22px;font-weight:400;color:var(--muted)}.section[open]>summary{margin-bottom:18px}.section[open]>summary:after{content:'−'}.section[id]{scroll-margin-top:85px}.settings-macros .wifirow:hover{border-color:#7b8795}.settings-macros a{text-decoration:none}.autosave{position:sticky;top:82px;z-index:8;background:#1b2722;border:1px solid #375b49;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:18px}.fieldgroup{margin-top:18px;padding-top:6px;border-top:1px solid var(--line)}.fieldgroup h3{margin:14px 0 6px}.fieldgroup>p{font-size:12px;color:var(--muted);margin:0 0 12px}.password-wrap{position:relative}.password-wrap input{padding-right:78px}.password-toggle{position:absolute;right:4px;top:4px;min-height:40px;padding:5px 9px;background:#23272c;color:var(--muted);border-radius:7px;font-size:11px}.footer-note{font-size:11px;color:#818b97;text-align:center;padding:6px 0 12px}.macro-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55vw}
+@media(max-width:600px){.top{min-height:62px;padding:10px 16px}.wrap{padding:20px 16px 32px}.control .wrap{padding-top:20px}.macro-grid{grid-template-columns:1fr;gap:10px}.hero{padding-bottom:18px}.hero h1{font-size:29px}.macrohead{padding:12px 14px 9px;gap:10px}.logo,.nologo{width:40px;height:40px;border-radius:10px}.mname h2{font-size:17px}.actions{padding:0 14px 12px}.actions button{min-height:44px;padding:9px 10px;font-size:13px}.transport{padding-left:16px;padding-right:16px}.transport-copy{display:none}.blackout{max-width:none}.section{padding:16px}.grid2{grid-template-columns:1fr}.title{font-size:13px}.iconbtn{font-size:12px}.channel-no{font-size:9px}.brand small{max-width:160px}.hero-top{margin-bottom:8px}.autosave{top:72px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition:none!important;animation:none!important}}
 )CSS";
 
 
 
 static const char CONTROL_PAGE_JS[] PROGMEM = R"JS(
 <script>
-const MACRO_COUNT=4;
-const DIRECT_GREY='#3a3f46';
-const ALERT_YELLOW='#f4c542';
-const ALERT_DARK='#252a31';
-
-let statusRequestRunning=false;
-
-async function api(u){
-  const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),1200);
-
-  try{
-    const r=await fetch(u,{
-      cache:'no-store',
-      signal:controller.signal
-    });
-
-    if(!r.ok)return null;
-    return await r.json();
-  }catch(e){
-    return null;
-  }finally{
-    clearTimeout(timer);
+let lastState=null,connected=false,commandBusy=false,pollBusy=false,refreshTimer=null;
+let requestId=0,appliedId=0,commandToken=0;
+const el=id=>document.getElementById(id);
+async function api(url){
+  const id=++requestId,controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),2000);
+  try{const r=await fetch(url,{cache:'no-store',signal:controller.signal});
+    if(!r.ok)throw Error('HTTP '+r.status);
+    const data=await r.json();
+    if(typeof data.output_enabled!=='boolean'||typeof data.alert_running!=='boolean')throw Error('Invalid status');
+    return {id,data};
+  }catch(e){return {id,data:null};}finally{clearTimeout(timer);}
+}
+function textColor(hex){const h=hex.replace('#','');return (parseInt(h.slice(0,2),16)*299+parseInt(h.slice(2,4),16)*587+parseInt(h.slice(4,6),16)*114)/1000>160?'#151719':'#fff';}
+function accept(result){
+  if(result.id<appliedId)return;
+  appliedId=result.id;connected=!!result.data;
+  if(result.data){lastState=result.data;el('feedback').textContent='';}
+  renderStatus();
+}
+function renderStatus(){
+  const s=lastState,badge=el('connection'),bar=el('alertbar');
+  badge.dataset.state=connected?'online':'offline';
+  badge.textContent=connected?'Boîtier connecté':'Connexion à vérifier';
+  document.body.dataset.mode=!connected?'unknown':s.alert_running?'alert':s.output_enabled?'live':'idle';
+  el('status').textContent=!connected?'État non confirmé':s.alert_running?'Alerte en cours':s.output_enabled?'En direct':s.active_macro>=0?'Hors direct':'Prêt pour le direct';
+  el('statusDetail').textContent=!connected?'Vérifiez votre connexion au Wi-Fi du boîtier.':s.alert_running?s.active_name+' · passage automatique en DIRECT':s.output_enabled?s.active_name+' · appuyez à nouveau sur DIRECT pour quitter':s.active_macro>=0?s.active_name+' · éclairage hors direct':'Choisissez une émission pour commencer.';
+  bar.hidden=!(connected&&s.alert_running);
+  bar.style.display=bar.hidden?'none':'block';
+  bar.textContent=connected&&s.alert_running?'Séquence en cours · OFF / NOIR reste disponible.':'';
+  for(let i=0;i<4;i++){
+    const card=el('macro-'+i),d=el('direct-'+i),a=el('alert-'+i);
+    const live=!!(connected&&s.output_enabled&&!s.alert_running&&s.active_macro===i);
+    const alert=!!(connected&&s.alert_running&&s.alert_macro===i);
+    card.dataset.active=String(live);card.dataset.alert=String(alert);
+    el('state-'+i).textContent=alert?'ALERTE':live?'EN DIRECT':'PRÊT';
+    d.classList.toggle('active',live);a.classList.toggle('active',alert);
+    d.setAttribute('aria-pressed',String(live));a.setAttribute('aria-pressed',String(alert));
+    d.style.background=live?d.dataset.color:'';d.style.color=live?textColor(d.dataset.color):'';
+    d.textContent=live?'Quitter le direct':'DIRECT';a.textContent=alert?'En cours…':'ALERTE';
+    d.disabled=!connected||commandBusy||s.alert_running||(s.output_enabled&&s.active_macro!==i);
+    a.disabled=!connected||commandBusy||s.alert_running||s.output_enabled;
+    if(!connected)el('state-'+i).textContent='—';
   }
 }
-
-function textColor(bg){
-  const h=bg.replace('#','');
-  if(h.length!==6)return'#fff';
-
-  const r=parseInt(h.substring(0,2),16);
-  const g=parseInt(h.substring(2,4),16);
-  const b=parseInt(h.substring(4,6),16);
-  const y=(r*299+g*587+b*114)/1000;
-
-  return y>160?'#111':'#fff';
+async function command(path,blackout=false){
+  if(commandBusy&&!blackout)return;
+  const token=++commandToken;
+  commandBusy=true;
+  // Ignore any poll started before this command; show only confirmed device state.
+  appliedId=requestId+1;
+  renderStatus();el('feedback').textContent=blackout?'Extinction demandée…':'Commande en cours…';
+  const result=await api(path);accept(result);
+  if(token!==commandToken)return;
+  commandBusy=false;renderStatus();
+  if(!result.data)el('feedback').textContent='Commande non confirmée. Vérifiez le boîtier avant de réessayer.';
+  scheduleRefresh(200);
 }
-
-async function directMacro(i){
-  const s=await api('/api/direct?i='+i);
-  if(s)renderStatus(s);
-  scheduleRefresh(120);
-}
-
-async function alertMacro(i){
-  const s=await api('/api/alert?i='+i);
-  if(s)renderStatus(s);
-  scheduleRefresh(120);
-}
-
-async function offOnAir(){
-  const s=await api('/api/off');
-  if(s)renderStatus(s);
-  scheduleRefresh(120);
-}
-
-function renderStatus(s){
-  const st=document.getElementById('status');
-  const bar=document.getElementById('alertbar');
-
-  if(!st||!bar)return;
-
-  for(let i=0;i<MACRO_COUNT;i++){
-    const d=document.getElementById('direct-'+i);
-    const a=document.getElementById('alert-'+i);
-
-    if(!d||!a)continue;
-
-    d.classList.remove('active');
-    d.style.background=DIRECT_GREY;
-    d.style.borderColor='#555d67';
-    d.style.color='#fff';
-
-    a.style.background=ALERT_YELLOW;
-    a.style.borderColor='#ffd960';
-    a.style.color='#111';
-    a.style.opacity=1;
-
-    d.disabled=false;
-    a.disabled=false;
-  }
-
-  if(s.alert_running){
-    bar.style.display='block';
-    bar.textContent='⚠ ALERTE — '+s.active_name;
-    st.textContent='ALERTE EN COURS';
-
-    for(let i=0;i<MACRO_COUNT;i++){
-      const d=document.getElementById('direct-'+i);
-      const a=document.getElementById('alert-'+i);
-
-      if(d)d.disabled=true;
-      if(a)a.disabled=true;
-    }
-
-    const a=document.getElementById('alert-'+s.alert_macro);
-
-    if(a){
-      if(s.led_intensity>0){
-        const c=s.led_hex;
-        a.style.background=c;
-        a.style.borderColor=c;
-        a.style.color=textColor(c);
-        a.style.opacity=Math.max(.30,s.led_intensity/100);
-      }else{
-        a.style.background=ALERT_DARK;
-        a.style.borderColor='#555d67';
-        a.style.color='#fff';
-        a.style.opacity=1;
-      }
-
-      a.disabled=false;
-    }
-
-    return;
-  }
-
-  bar.style.display='none';
-
-  if(s.output_enabled && s.active_macro>=0){
-    st.textContent='ON AIR : '+s.active_name;
-
-    for(let i=0;i<MACRO_COUNT;i++){
-      const d=document.getElementById('direct-'+i);
-      const a=document.getElementById('alert-'+i);
-
-      if(!d||!a)continue;
-
-      if(i===s.active_macro){
-        const c=d.dataset.color;
-
-        d.classList.add('active');
-        d.style.background=c;
-        d.style.borderColor=c;
-        d.style.color=textColor(c);
-        d.disabled=false;
-      }else{
-        d.disabled=true;
-      }
-
-      a.disabled=true;
-    }
-  }else{
-    if(s.active_macro>=0){
-      st.textContent='HORS DIRECT : '+s.active_name;
-    }else{
-      st.textContent='ON AIR ETEINT';
-    }
-  }
-}
-
-let refreshTimer=null;
-
-function scheduleRefresh(delay){
-  clearTimeout(refreshTimer);
-  refreshTimer=setTimeout(refreshStatus,delay);
-}
-
+function directMacro(i){return command('/api/direct?i='+i);}
+function alertMacro(i){return command('/api/alert?i='+i);}
+function offOnAir(){return command('/api/off',true);}
+function scheduleRefresh(ms){clearTimeout(refreshTimer);if(!document.hidden)refreshTimer=setTimeout(refreshStatus,ms);}
 async function refreshStatus(){
-  if(statusRequestRunning){
-    scheduleRefresh(250);
-    return;
-  }
-
-  statusRequestRunning=true;
-
-  try{
-    const s=await api('/api/status');
-
-    if(s){
-      renderStatus(s);
-      scheduleRefresh(s.alert_running ? 160 : 650);
-    }else{
-      // Une requete perdue ne fige plus jamais l'interface.
-      scheduleRefresh(350);
-    }
-  }finally{
-    statusRequestRunning=false;
-  }
+  if(document.hidden)return;
+  if(pollBusy||commandBusy){scheduleRefresh(300);return;}
+  pollBusy=true;
+  try{accept(await api('/api/status'));}finally{pollBusy=false;scheduleRefresh(connected?(lastState.alert_running?350:1000):1500);}
 }
-
-refreshStatus();
+document.addEventListener('visibilitychange',()=>{clearTimeout(refreshTimer);if(!document.hidden){connected=false;renderStatus();refreshStatus();}});
+window.addEventListener('pageshow',()=>{connected=false;renderStatus();scheduleRefresh(0);});
+renderStatus();scheduleRefresh(0);
 </script>
 )JS";
 
@@ -2876,9 +2752,9 @@ void sendControlPage() {
   chunk.reserve(1200);
 
   chunk =
-    "<!doctype html><html><head>"
+    "<!doctype html><html lang='fr'><head>"
     "<meta charset='utf-8'>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'>"
     "<title>";
 
   chunk += htmlEscape(config.deviceName);
@@ -2886,16 +2762,23 @@ void sendControlPage() {
   chunk +=
     "</title>"
     "<style>html,body{margin:0;background:#090b0e;color:#f4f6f8}</style>"
-    "<link rel='stylesheet' href='/style.css?v=211'>"
-    "</head><body>"
-    "<div class='top'><div class='title'>";
+    "<link rel='stylesheet' href='/style.css?v=310'>"
+    "</head><body class='control' data-mode='unknown'>"
+    "<header class='top'><div class='brand'><span class='brandmark' aria-hidden='true'>ON</span>"
+    "<div class='title'>ON AIR<small>";
 
   chunk += htmlEscape(config.deviceName);
 
   chunk +=
-    "</div><a class='iconbtn' href='/settings'>⚙</a></div>"
-    "<div id='alertbar' class='alertbar'>ALERTE EN COURS</div>"
-    "<div class='wrap'>";
+    "</small></div></div><a class='iconbtn' href='/settings' aria-label='Ouvrir les réglages'>Réglages <span aria-hidden='true'>↗</span></a></header>"
+    "<main class='wrap'><section class='hero' aria-label='État du boîtier'>"
+    "<div class='hero-top'><span class='eyebrow'>Console de diffusion</span>"
+    "<span id='connection' class='connection' data-state='offline'>Connexion…</span></div>"
+    "<h1 id='status' role='status' aria-live='polite'>Connexion au boîtier</h1>"
+    "<p id='statusDetail'>Vérification de l’état…</p></section>"
+    "<div id='alertbar' class='alertbar' hidden></div>"
+    "<div class='bank-head'><h2>Vos émissions</h2><a class='textlink' href='/settings#macros'>Personnaliser</a></div>"
+    "<div class='macro-grid'>";
 
   server.sendContent(chunk);
   chunk = "";
@@ -2910,36 +2793,44 @@ void sendControlPage() {
 
     chunk.reserve(1500);
 
-    chunk = "<div class='card'><div class='macrohead'>";
+    chunk = "<section class='card' id='macro-";
+    chunk += String(i);
+    chunk += "'><div class='macrohead'>";
 
     if (logoAvailable(i)) {
       chunk += "<img class='logo' src='/logo?i=";
       chunk += String(i);
-      chunk += "'>";
+      chunk += "' alt='' decoding='async'>";
     } else {
-      chunk += "<div class='nologo'>LOGO</div>";
+      chunk += "<div class='nologo' aria-hidden='true'>";
+      chunk += String(i + 1);
+      chunk += "</div>";
     }
 
     chunk += "<div class='mname'><h2>";
     chunk += htmlEscape(String(m.name));
     chunk += "</h2><div class='meta'>";
 
+    chunk += "<span class='swatch' aria-hidden='true' style='background:";
     chunk += directColor;
-    chunk += " · ";
+    chunk += "'></span>";
     chunk += String(m.intensity);
-    chunk += "% · alerte ";
+    chunk += " % · alerte ";
     chunk += String(m.alertDuration);
     chunk += "s</div></div>";
 
-    chunk += "<div class='swatch' style='background:";
-    chunk += directColor;
-    chunk += "'></div></div>";
+    chunk += "<div class='channel-info'><span class='channel-no'>0";
+    chunk += String(i + 1);
+    chunk += "</span>";
+    chunk += "<span class='card-state' id='state-";
+    chunk += String(i);
+    chunk += "'>—</span></div></div>";
 
     chunk += "<div class='actions'>";
 
     chunk += "<button id='direct-";
     chunk += String(i);
-    chunk += "' class='direct' data-color='";
+    chunk += "' type='button' class='direct' disabled aria-pressed='false' data-color='";
     chunk += directColor;
     chunk += "' onclick='directMacro(";
     chunk += String(i);
@@ -2947,7 +2838,7 @@ void sendControlPage() {
 
     chunk += "<button id='alert-";
     chunk += String(i);
-    chunk += "' class='alert' data-color='";
+    chunk += "' type='button' class='alert' disabled aria-pressed='false' data-color='";
     chunk += directColor;
     chunk += "' data-idle-color='";
     chunk += idleColor;
@@ -2955,9 +2846,9 @@ void sendControlPage() {
     chunk += (m.idleOff ? "1" : "0");
     chunk += "' onclick='alertMacro(";
     chunk += String(i);
-    chunk += ")'>⚠ ALERTE</button>";
+    chunk += ")'>ALERTE</button>";
 
-    chunk += "</div></div>";
+    chunk += "</div></section>";
 
     server.sendContent(chunk);
     chunk = "";
@@ -2966,13 +2857,12 @@ void sendControlPage() {
   }
 
   server.sendContent(
-    "<button id='offBtn' type='button' "
-    "onclick='offOnAir()' "
-    "style='width:100%;margin:2px 0 12px;background:#050505;color:#fff;border:2px solid #555d67'>"
-    "■ OFF / NOIR"
-    "</button>"
-    "<div id='status' class='status'>ON AIR ETEINT</div>"
-    "</div>"
+    "</div><div id='feedback' class='feedback' role='status' aria-live='polite'></div>"
+    "<div class='footer-note'>ON AIR · Contrôle local</div></main>"
+    "<footer class='transport'><div class='transport-inner'>"
+    "<div class='transport-copy'><b>Sortie lumière</b><span>Extinction immédiate, à tout moment.</span></div>"
+    "<button id='offBtn' class='blackout' type='button' onclick='offOnAir()'>"
+    "■ OFF / NOIR <small>Tout éteindre</small></button></div></footer>"
   );
 
   server.sendContent_P(CONTROL_PAGE_JS);
@@ -3160,6 +3050,17 @@ static const char MACRO_PAGE_JS[] PROGMEM = R"MACROJS(
 <script>
 let saveTimer=null;
 let previewTimer=null;
+let savePromise=null,saveDirty=false,unsaved=false;
+let previewBusy=false,pendingPreview=null;
+
+async function macroRequest(url){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),3000);
+  try{
+    const r=await fetch(url,{cache:'no-store',signal:controller.signal});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r;
+  }finally{clearTimeout(timer);}
+}
 
 function params(){
   const q=new URLSearchParams();
@@ -3185,45 +3086,57 @@ function saveState(text,color){
 }
 
 function scheduleSave(){
-  saveState('Modification...','#ffbc42');
+  unsaved=true;
+  saveState('Modifications en attente…','#f1bf67');
   clearTimeout(saveTimer);
   saveTimer=setTimeout(saveNow,650);
 }
 
 async function saveNow(){
-  clearTimeout(saveTimer);
-  saveState('Sauvegarde...','#ffbc42');
-
-  try{
-    const r=await fetch('/api/macroSave?'+params().toString(),{
-      cache:'no-store'
-    });
-
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    saveState('✓ Sauvegarde automatique','#65d487');
-  }catch(e){
-    saveState('ERREUR DE SAUVEGARDE','#ff5b5b');
-  }
+  clearTimeout(saveTimer);saveTimer=null;
+  unsaved=true;
+  if(savePromise){saveDirty=true;return savePromise;}
+  savePromise=(async()=>{
+    try{
+      do{
+        saveDirty=false;
+        const snapshot=params().toString();
+        saveState('Enregistrement…','#f1bf67');
+        await macroRequest('/api/macroSave?'+snapshot);
+        if(snapshot!==params().toString())saveDirty=true;
+      }while(saveDirty);
+      unsaved=false;
+      saveState('✓ Tous les réglages sont enregistrés','#8ed5b1');
+      return true;
+    }catch(e){
+      saveState('Non enregistré · vérifiez la connexion et réessayez.','#ffb3ae');
+      return false;
+    }finally{savePromise=null;}
+  })();
+  return savePromise;
 }
 
 function preview(state){
   clearTimeout(previewTimer);
+  pendingPreview=state;
+  previewTimer=setTimeout(flushPreview,100);
+}
 
-  previewTimer=setTimeout(async()=>{
-    const q=params();
-    q.set('state',state);
-
-    try{
-      await fetch('/api/macroPreview?'+q.toString(),{
-        cache:'no-store'
-      });
-    }catch(e){}
-  },60);
+async function flushPreview(){
+  if(previewBusy||pendingPreview===null)return;
+  previewBusy=true;
+  const state=pendingPreview;pendingPreview=null;
+  const q=params();q.set('state',state);
+  try{await macroRequest('/api/macroPreview?'+q.toString());}
+  catch(e){saveState('Aperçu non confirmé · vérifiez la connexion.','#f1bf67');}
+  finally{previewBusy=false;if(pendingPreview!==null)previewTimer=setTimeout(flushPreview,100);}
 }
 
 function updateIdleControls(){
   const off=document.getElementById('idleOff').checked;
   document.getElementById('idleControls').style.opacity=off?'.38':'1';
+  document.getElementById('idleColor').disabled=off;
+  document.getElementById('idleIntensity').disabled=off;
 }
 
 function updateAnimationHelp(){
@@ -3236,7 +3149,7 @@ function updateAnimationHelp(){
     'Un seul passage sur toute la duree : vert → jaune → rouge.',
     'DIRECT / HORS DIRECT accelere progressivement sur toute la duree.',
     'Deux flashs courts suivis d une pause, repetes pendant la duree.',
-    'Un point lumineux avec une queue fait le tour des 30 LED du logo.',
+    'Un point lumineux avec une queue fait le tour des 36 LED du logo.',
     'Le contour du logo se dessine LED par LED puis recommence.'
   ];
 
@@ -3244,11 +3157,10 @@ function updateAnimationHelp(){
 }
 
 async function testAlert(){
-  await saveNow();
-
-  const r=await fetch('/api/alertTest?i='+macroIndex,{
-    cache:'no-store'
-  });
+  if(!await saveNow())return;
+  let r;
+  try{r=await macroRequest('/api/alertTest?i='+macroIndex);}
+  catch(e){saveState('Test non confirmé · vérifiez la connexion.','#f1bf67');return;}
 
   // Le test se termine automatiquement TOUT ETEINT.
   // Aucun retour au menu principal n'est necessaire.
@@ -3267,6 +3179,12 @@ async function deleteLogo(){
 
 updateIdleControls();
 updateAnimationHelp();
+document.querySelectorAll('a[href]').forEach(a=>a.addEventListener('click',async e=>{
+  if(!unsaved&&!savePromise&&!saveTimer)return;
+  e.preventDefault();
+  if(await saveNow())location.href=a.href;
+}));
+window.addEventListener('beforeunload',e=>{if(unsaved||savePromise){e.preventDefault();e.returnValue='';}});
 </script>
 )MACROJS";
 
@@ -3292,6 +3210,16 @@ void endChunkedHtml() {
 }
 
 
+
+static const char UI_ENHANCEMENT_JS[] PROGMEM = R"UIJS(
+<script>
+function revealSection(){const id=location.hash.slice(1),node=document.getElementById(id);if(node&&node.tagName==='DETAILS')node.open=true;}
+window.addEventListener('hashchange',revealSection);revealSection();
+document.querySelectorAll('label').forEach((label,i)=>{if(label.querySelector('input')||label.htmlFor)return;const field=label.nextElementSibling;if(field&&/^(INPUT|SELECT)$/.test(field.tagName)){if(!field.id)field.id='field-'+i;label.htmlFor=field.id;}});
+document.querySelectorAll('input[type=password]').forEach(input=>{const wrap=document.createElement('div');wrap.className='password-wrap';input.before(wrap);wrap.append(input);const b=document.createElement('button');b.type='button';b.className='password-toggle';b.textContent='Afficher';b.setAttribute('aria-label','Afficher le mot de passe');b.setAttribute('aria-pressed','false');b.onclick=()=>{const show=input.type==='password';input.type=show?'text':'password';b.textContent=show?'Masquer':'Afficher';b.setAttribute('aria-pressed',String(show));b.setAttribute('aria-label',(show?'Masquer':'Afficher')+' le mot de passe');};wrap.append(b);});
+</script>
+)UIJS";
+
 void sendSettingsPage() {
   Serial.println(
     "[WEB] GET /settings stream | heap=" + String(ESP.getFreeHeap()) +
@@ -3305,112 +3233,26 @@ void sendSettingsPage() {
   c.reserve(2200);
 
   c =
-    "<!doctype html><html><head><meta charset='utf-8'>"
+    "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>Parametres</title>"
+    "<title>Réglages · ON AIR</title>"
     "<style>html,body{margin:0;background:#090b0e;color:#f4f6f8}</style>"
-    "<link rel='stylesheet' href='/style.css?v=29'>"
+    "<link rel='stylesheet' href='/style.css?v=310'>"
     "</head><body>"
-    "<div class='top'><div class='title'>PARAMETRES</div>"
-    "<a class='iconbtn' href='/'>← CONTROLE</a></div>"
-    "<div class='wrap'>"
+    "<header class='top'><div class='title'>Réglages</div>"
+    "<a class='iconbtn' href='/'>← Console</a></header>"
+    "<main class='wrap'><div class='settings-intro'><span class='eyebrow'>Votre espace de travail</span>"
+    "<h1>À votre image.</h1><p>Émissions, couleurs et connexions. Chaque chose à sa place.</p></div>"
+    "<nav class='jumpnav' aria-label='Rubriques'><a href='#macros'>Émissions</a>"
+    "<a href='#general'>Boîtier</a><a href='#network'>Wi-Fi</a><a href='#system'>Système</a></nav>"
 
-    "<form method='POST' action='/saveGeneral'>"
-    "<div class='section'><h2>General</h2>"
-    "<label>Nom de l'appareil</label><input name='deviceName' maxlength='32' value='";
-
-  c += htmlEscape(config.deviceName);
-  c += "'><label>Nom du Wi-Fi cree par l'ESP</label>";
-  c += "<input name='apSSID' maxlength='32' value='";
-  c += htmlEscape(config.apSSID);
-  c += "'><label>Mot de passe Wi-Fi</label>";
-  c += "<input name='apPassword' type='password' minlength='8' maxlength='64' placeholder='laisser vide pour conserver'>";
-  c += "<label><input type='checkbox' name='startupAnimation' value='1' style='width:auto;margin-right:8px'";
-
-  if (config.startupAnimation) c += " checked";
-
-  c += "> Indicateur couleur des etapes de demarrage</label>";
-  c += "<button class='save' type='submit'>ENREGISTRER PARAMETRES GENERAUX</button>";
-  c += "<div class='small' style='margin-top:10px'>Changer le SSID ou le mot de passe redemarre l ESP.</div>";
-  c += "</div></form>";
-
+    ;
   sendHtmlChunk(c);
   c = "";
-
-  c.reserve(2500);
-  c =
-    "<form method='POST' action='/saveExternalWiFi'>"
-    "<div class='section'><h2>Wi-Fi externe / Internet</h2>"
-    "<label><input id='externalWiFiEnabled' type='checkbox' name='externalWiFiEnabled' value='1' style='width:auto;margin-right:8px'";
-
-  if (config.externalWiFiEnabled) c += " checked";
-
-  c += "> Connecter aussi l ESP a un reseau Wi-Fi externe</label>";
-  c += "<button id='scanWifiBtn' type='button' class='save' style='width:100%;margin-top:10px' onclick='scanWiFi()'>📡 DETECTER LES WI-FI</button>";
-  c += "<div id='wifiScanStatus' class='small' style='margin-top:8px'>Appuie sur le bouton pour rechercher les reseaux 2.4 GHz.</div>";
-  c += "<div id='wifiScanResults' style='margin-top:10px'></div>";
-  c += "<label>SSID du reseau externe</label>";
-  c += "<input id='externalSSID' name='externalSSID' maxlength='32' value='' placeholder='Selectionne un Wi-Fi ci-dessus'>";
-  c += "<label>Mot de passe</label>";
-  c += "<input id='externalPassword' name='externalPassword' type='password' maxlength='64' placeholder='vide = conserver le mot de passe memorise'>";
-  c += "<div class='small' style='margin-top:12px;padding:12px;background:#0e1115;border:1px solid #343c46;border-radius:10px'>";
-  c += "<b>ACCES AU BOITIER</b><br>";
-  c += "Direct : <b>ON_AIR-MOC</b> → <b>http://192.168.4.1</b><br>";
-  c += "Via le routeur : <b>http://onair-moc.local</b></div>";
-  c += "<div class='small' style='margin-top:12px'>";
-
-  if (config.externalWiFiEnabled) {
-    if (WiFi.status() == WL_CONNECTED) {
-      c += "Etat : <b style='color:#65d487'>CONNECTE</b><br>";
-      c += "Reseau : <b>";
-      c += htmlEscape(WiFi.SSID());
-      c += "</b><br>IP actuelle : <b>";
-      c += WiFi.localIP().toString();
-      c += "</b>";
-    } else {
-      c += "Etat : <b style='color:#ffbc42'>ACTIF - EN ATTENTE D UN RESEAU MEMORISE</b>";
-    }
-  } else {
-    c += "Connexion externe : desactivee";
-  }
-
-  c += "</div>";
-  c += "<button class='save' type='submit'>MEMORISER / CONNECTER SANS REDEMARRER</button>";
-  c += "</div></form>";
-
-  sendHtmlChunk(c);
-  c = "";
-
-  sendHtmlChunk("<div class='section'><h2>Wi-Fi memorises</h2>");
-
-  if (config.knownWiFiCount == 0) {
-    sendHtmlChunk("<div class='small'>Aucun reseau memorise.</div>");
-  } else {
-    sendHtmlChunk("<div class='wifilist'>");
-
-    for (uint8_t k = 0; k < config.knownWiFiCount; k++) {
-      c.reserve(900);
-      c = "<div class='wifirow' style='cursor:default'><div style='min-width:0'>";
-      c += "<div class='wifiname'>";
-      c += htmlEscape(String(config.knownWiFi[k].ssid));
-      c += "</div><div class='wifimeta'>Mot de passe memorise dans l ESP</div></div>";
-      c += "<button type='button' style='min-height:38px;padding:6px 10px;background:#7d1d1d;color:#fff' onclick='forgetWiFi(";
-      c += String(k);
-      c += ")'>OUBLIER</button></div>";
-
-      sendHtmlChunk(c);
-      c = "";
-    }
-
-    sendHtmlChunk("</div>");
-  }
-
-  sendHtmlChunk("</div>");
-
   sendHtmlChunk(
-    "<div class='section'><h2>Macros</h2>"
+    "<section id='macros' class='section settings-macros'><h2>Vos émissions</h2>"
     "<div class='small' style='margin-bottom:12px'>"
-    "Chaque macro a sa propre page de reglage."
+    "Choisissez une émission pour régler ses couleurs, son alerte et son identité."
     "</div>"
   );
 
@@ -3425,7 +3267,7 @@ void sendSettingsPage() {
     c += "<div style='display:flex;align-items:center;gap:10px;min-width:0'>";
 
     if (logoAvailable(i)) {
-      c += "<img class='logo' style='width:46px;height:46px' src='/logo?i=";
+      c += "<img class='logo' style='width:46px;height:46px' alt='' src='/logo?i=";
       c += String(i);
       c += "'>";
     } else {
@@ -3458,10 +3300,106 @@ void sendSettingsPage() {
     c = "";
   }
 
-  sendHtmlChunk("</div>");
+  sendHtmlChunk("</section>");
+
+
+  c =
+    "<form method='POST' action='/saveGeneral'>"
+    "<details id='general' class='section'><summary>Identité du boîtier</summary>"
+    "<label>Nom de l'appareil</label><input name='deviceName' maxlength='32' value='";
+
+  c += htmlEscape(config.deviceName);
+  c += "'><label>Nom du Wi-Fi du boîtier</label>";
+  c += "<input name='apSSID' maxlength='32' value='";
+  c += htmlEscape(config.apSSID);
+  c += "'><label>Mot de passe Wi-Fi</label>";
+  c += "<input name='apPassword' type='password' minlength='8' maxlength='64' placeholder='laisser vide pour conserver'>";
+  c += "<label><input type='checkbox' name='startupAnimation' value='1' style='width:auto;margin-right:8px'";
+
+  if (config.startupAnimation) c += " checked";
+
+  c += "> Indicateur couleur des etapes de demarrage</label>";
+  c += "<button class='save' type='submit'>ENREGISTRER LE BOÎTIER</button>";
+  c += "<div class='small' style='margin-top:10px'>Changer le SSID ou le mot de passe redemarre l ESP.</div>";
+  c += "</details></form>";
+
+  sendHtmlChunk(c);
+  c = "";
+
+  c.reserve(2500);
+  c =
+    "<form method='POST' action='/saveExternalWiFi'>"
+    "<details id='network' class='section'><summary>Connexion Wi-Fi externe</summary>"
+    "<label><input id='externalWiFiEnabled' type='checkbox' name='externalWiFiEnabled' value='1' style='width:auto;margin-right:8px'";
+
+  if (config.externalWiFiEnabled) c += " checked";
+
+  c += "> Connecter aussi l ESP a un reseau Wi-Fi externe</label>";
+  c += "<button id='scanWifiBtn' type='button' class='save' style='width:100%;margin-top:10px' onclick='scanWiFi()'>📡 DETECTER LES WI-FI</button>";
+  c += "<div id='wifiScanStatus' class='small' style='margin-top:8px'>Appuie sur le bouton pour rechercher les reseaux 2.4 GHz.</div>";
+  c += "<div id='wifiScanResults' style='margin-top:10px'></div>";
+  c += "<label>SSID du reseau externe</label>";
+  c += "<input id='externalSSID' name='externalSSID' maxlength='32' value='' placeholder='Selectionne un Wi-Fi ci-dessus'>";
+  c += "<label>Mot de passe</label>";
+  c += "<input id='externalPassword' name='externalPassword' type='password' maxlength='64' placeholder='vide = conserver le mot de passe memorise'>";
+  c += "<div class='small' style='margin-top:12px;padding:12px;background:#0e1115;border:1px solid #343c46;border-radius:10px'>";
+  c += "<b>ACCES AU BOITIER</b><br>";
+  c += "Direct : <b>";
+  c += htmlEscape(String(config.apSSID));
+  c += "</b> → <b>http://192.168.4.1</b><br>";
+  c += "Via le routeur : <b>http://onair-moc.local</b></div>";
+  c += "<div class='small' style='margin-top:12px'>";
+
+  if (config.externalWiFiEnabled) {
+    if (WiFi.status() == WL_CONNECTED) {
+      c += "Etat : <b style='color:#65d487'>CONNECTE</b><br>";
+      c += "Reseau : <b>";
+      c += htmlEscape(WiFi.SSID());
+      c += "</b><br>IP actuelle : <b>";
+      c += WiFi.localIP().toString();
+      c += "</b>";
+    } else {
+      c += "Etat : <b style='color:#ffbc42'>ACTIF - EN ATTENTE D UN RESEAU MEMORISE</b>";
+    }
+  } else {
+    c += "Connexion externe : desactivee";
+  }
+
+  c += "</div>";
+  c += "<button class='save' type='submit'>ENREGISTRER ET CONNECTER</button>";
+  c += "</details></form>";
+
+  sendHtmlChunk(c);
+  c = "";
+
+  sendHtmlChunk("<details class='section'><summary>Réseaux mémorisés</summary>");
+
+  if (config.knownWiFiCount == 0) {
+    sendHtmlChunk("<div class='small'>Aucun reseau memorise.</div>");
+  } else {
+    sendHtmlChunk("<div class='wifilist'>");
+
+    for (uint8_t k = 0; k < config.knownWiFiCount; k++) {
+      c.reserve(900);
+      c = "<div class='wifirow' style='cursor:default'><div style='min-width:0'>";
+      c += "<div class='wifiname'>";
+      c += htmlEscape(String(config.knownWiFi[k].ssid));
+      c += "</div><div class='wifimeta'>Mot de passe memorise dans l ESP</div></div>";
+      c += "<button type='button' style='min-height:38px;padding:6px 10px;background:#7d1d1d;color:#fff' onclick='forgetWiFi(";
+      c += String(k);
+      c += ")'>OUBLIER</button></div>";
+
+      sendHtmlChunk(c);
+      c = "";
+    }
+
+    sendHtmlChunk("</div>");
+  }
+
+  sendHtmlChunk("</details>");
 
   c.reserve(2300);
-  c = "<div class='section'><h2>Systeme</h2><div class='small'>";
+  c = "<details id='system' class='section'><summary>Système & maintenance</summary><div class='small'>";
   c += "Firmware : ";
   c += String(FIRMWARE_VERSION);
   c += "<br>Wi-Fi autonome : ";
@@ -3478,25 +3416,26 @@ void sendSettingsPage() {
 
   c += "</div>";
   c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px' href='/diagnostics'>DIAGNOSTIC</a>";
-  c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px;background:#55606d' href='/config/export'>EXPORTER LA CONFIGURATION</a>";
+  c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px;background:#30363d;color:#f4f3ee;border-color:#454d57' href='/config/export'>EXPORTER LA CONFIGURATION</a>";
   c += "<div class='filebox' style='margin-top:12px'>";
   c += "<label style='margin-top:0'>Restaurer une configuration</label>";
   c += "<div class='small'>Le fichier de backup contient aussi les mots de passe Wi-Fi.</div>";
   c += "<form method='POST' action='/config/import' enctype='multipart/form-data'>";
   c += "<input type='file' name='backup' accept='.cfg,application/octet-stream'>";
   c += "<button class='save' type='submit'>IMPORTER LE BACKUP</button></form></div>";
-  c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px;background:#6d4bb8' href='/update'>MISE A JOUR FIRMWARE OTA</a>";
+  c += "<a class='save' style='display:block;text-align:center;text-decoration:none;padding:16px;background:#30363d;color:#f4f3ee;border-color:#454d57' href='/firmware'>METTRE À JOUR LE BOÎTIER</a>";
   c += "<div class='small' style='margin-top:7px'>Charge un fichier .bin compile pour cet ESP8266.</div>";
   c += "<button type='button' class='direct' style='width:100%;margin-top:12px' onclick='startupTest()'>TEST ANIMATION DEMARRAGE</button>";
-  c += "<button type='button' class='danger' onclick='rebootDevice()'>REDEMARRER ESP</button>";
-  c += "<button type='button' class='danger' onclick='factoryReset()'>REINITIALISER CONFIGURATION</button>";
-  c += "</div>";
+  c += "<button type='button' class='danger' onclick='rebootDevice()'>REDÉMARRER LE BOÎTIER</button>";
+  c += "<button type='button' class='danger' onclick='factoryReset()'>RÉINITIALISER LA CONFIGURATION</button>";
+  c += "</details>";
 
   sendHtmlChunk(c);
   c = "";
 
   server.sendContent_P(SETTINGS_PAGE_JS);
-  sendHtmlChunk("</div></body></html>");
+  server.sendContent_P(UI_ENHANCEMENT_JS);
+  sendHtmlChunk("</main></body></html>");
   endChunkedHtml();
 
   }
@@ -3529,30 +3468,30 @@ void sendMacroSettingsPage(uint8_t i) {
   c.reserve(2200);
 
   c =
-    "<!doctype html><html><head><meta charset='utf-8'>"
+    "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>Macro ";
 
   c += String(i + 1);
   c += "</title>";
   c += "<style>html,body{margin:0;background:#090b0e;color:#f4f6f8}</style>";
-  c += "<link rel='stylesheet' href='/style.css?v=29'></head><body>";
-  c += "<div class='top'><div class='title'>MACRO ";
+  c += "<link rel='stylesheet' href='/style.css?v=310'></head><body>";
+  c += "<header class='top'><div class='title macro-title'>Émission ";
   c += String(i + 1);
   c += " — ";
   c += htmlEscape(String(m.name));
-  c += "</div><a class='iconbtn' href='/settings'>← PARAMETRES</a></div>";
-  c += "<div class='wrap'><div class='section'>";
+  c += "</div><a class='iconbtn' href='/settings#macros'>← Émissions</a></header>";
+  c += "<main class='wrap'><div class='section'>";
 
   if (logoAvailable(i)) {
     c += "<div style='display:flex;justify-content:center;margin-bottom:14px'>";
-    c += "<img class='logo' style='width:90px;height:90px' src='/logo?i=";
+    c += "<img alt='' class='logo' style='width:64px;height:64px' src='/logo?i=";
     c += String(i);
     c += "'></div>";
   }
 
-  c += "<div id='autosave' class='small' style='margin-bottom:8px;color:#65d487'>✓ Sauvegarde automatique</div>";
-  c += "<label>Nom</label><input id='macroName' maxlength='24' value='";
+  c += "<div id='autosave' class='autosave' role='status' aria-live='polite'>Tous les réglages sont enregistrés</div>";
+  c += "<label>Nom de l’émission</label><input id='macroName' maxlength='24' value='";
   c += htmlEscape(String(m.name));
   c += "' oninput='scheduleSave()'>";
 
@@ -3560,24 +3499,24 @@ void sendMacroSettingsPage(uint8_t i) {
   c = "";
 
   c.reserve(2100);
-  c = "<div style='margin-top:16px;padding:12px;background:#101419;border:1px solid #343c46;border-radius:12px'>";
-  c += "<h3 style='margin:0 0 8px'>DIRECT</h3><div class='grid2'>";
+  c = "<section class='fieldgroup'>";
+  c += "<h3>01 / En direct</h3><p>La signature lumineuse de cette émission.</p><div class='grid2'>";
   c += "<div><label>Couleur DIRECT</label><input id='directColor' type='color' value='";
   c += rgbToHex(m.r,m.g,m.b);
   c += "' oninput=\"preview('direct');scheduleSave()\" onchange='saveNow()'></div>";
-  c += "<div><label>Intensite DIRECT : <span id='directIv'>";
+  c += "<div><label>Intensité DIRECT : <span id='directIv'>";
   c += String(m.intensity);
   c += "%</span></label><input id='directIntensity' type='range' min='0' max='100' value='";
   c += String(m.intensity);
   c += "' oninput=\"document.getElementById('directIv').textContent=this.value+'%';preview('direct');scheduleSave()\" onchange='saveNow()'></div>";
-  c += "</div></div>";
+  c += "</div></section>";
 
   sendHtmlChunk(c);
   c = "";
 
   c.reserve(2200);
-  c = "<div style='margin-top:12px;padding:12px;background:#101419;border:1px solid #343c46;border-radius:12px'>";
-  c += "<h3 style='margin:0 0 8px'>HORS DIRECT</h3><label>";
+  c = "<section class='fieldgroup'>";
+  c += "<h3>02 / Hors direct</h3><label>";
   c += "<input id='idleOff' type='checkbox' style='width:auto;margin-right:8px'";
 
   if (m.idleOff) c += " checked";
@@ -3588,19 +3527,19 @@ void sendMacroSettingsPage(uint8_t i) {
   c += "<div><label>Couleur HORS DIRECT</label><input id='idleColor' type='color' value='";
   c += rgbToHex(m.idleR,m.idleG,m.idleB);
   c += "' oninput=\"preview('idle');scheduleSave()\" onchange='saveNow()'></div>";
-  c += "<div><label>Intensite HORS DIRECT : <span id='idleIv'>";
+  c += "<div><label>Intensité HORS DIRECT : <span id='idleIv'>";
   c += String(m.idleIntensity);
   c += "%</span></label><input id='idleIntensity' type='range' min='0' max='100' value='";
   c += String(m.idleIntensity);
   c += "' oninput=\"document.getElementById('idleIv').textContent=this.value+'%';preview('idle');scheduleSave()\" onchange='saveNow()'></div>";
-  c += "</div><div class='small' style='margin-top:8px'>Etat affiche quand cette emission n est pas en DIRECT.</div></div>";
+  c += "</div><div class='small' style='margin-top:8px'>État lumineux lorsque cette émission quitte le DIRECT.</div></section>";
 
   sendHtmlChunk(c);
   c = "";
 
   c.reserve(2500);
-  c = "<div style='margin-top:12px;padding:12px;background:#101419;border:1px solid #343c46;border-radius:12px'>";
-  c += "<h3 style='margin:0 0 8px'>ALERTE AVANT DIRECT</h3>";
+  c = "<section class='fieldgroup'>";
+  c += "<h3>03 / Avant le direct</h3><p>Une séquence d’alerte, puis le passage automatique en DIRECT.</p>";
   c += "<label>Animation</label><select id='alertAnimation' onchange='updateAnimationHelp();saveNow()'>";
 
   c += "<option value='0'";
@@ -3632,7 +3571,7 @@ void sendMacroSettingsPage(uint8_t i) {
   c += ">Logo : dessin progressif du contour</option></select>";
 
   c += "<div id='animationHelp' class='small' style='margin-top:7px'></div>";
-  c += "<div class='grid2'><div><label>Duree alerte</label>";
+  c += "<div class='grid2'><div><label>Durée de l’alerte</label>";
   c += "<input id='alertDuration' type='number' min='1' max='60' value='";
   c += String(m.alertDuration);
   c += "' onchange='saveNow()'><div class='small'>secondes</div></div>";
@@ -3642,7 +3581,7 @@ void sendMacroSettingsPage(uint8_t i) {
   c += "' onchange='saveNow()'><div class='small'>100 ms = rapide · 2000 ms = lent</div></div></div>";
   c += "<div class='small' style='margin-top:10px'>La fin de l alerte passe automatiquement en DIRECT.</div>";
   c += "<div class='testrow'><button type='button' class='direct' onclick=\"preview('direct')\">APERÇU DIRECT</button>";
-  c += "<button type='button' class='alert' onclick='testAlert()'>TEST ALERTE</button></div></div>";
+  c += "<button type='button' class='alert' onclick='testAlert()'>TEST ALERTE</button></div></section>";
 
   sendHtmlChunk(c);
   c = "";
@@ -3652,7 +3591,7 @@ void sendMacroSettingsPage(uint8_t i) {
 
   if (logoAvailable(i)) {
     c += "<div style='display:flex;align-items:center;gap:12px;margin-bottom:10px'>";
-    c += "<img class='logo' src='/logo?i=";
+    c += "<img alt='' class='logo' src='/logo?i=";
     c += String(i);
     c += "'><div class='small'>";
 
@@ -3666,13 +3605,13 @@ void sendMacroSettingsPage(uint8_t i) {
   c += String(i);
   c += "' enctype='multipart/form-data'>";
   c += "<input type='file' name='logo' accept='.png,.jpg,.jpeg,image/png,image/jpeg'>";
-  c += "<button class='save' type='submit'>ENVOYER LE LOGO</button></form>";
+  c += "<button class='save' type='submit'>IMPORTER LE LOGO</button></form>";
 
   if (strlen(m.logoPath) && !isBuiltinLogo(String(m.logoPath))) {
     c += "<button type='button' class='danger' onclick='deleteLogo()'>REMETTRE LE LOGO D ORIGINE</button>";
   }
 
-  c += "</div></div>";
+  c += "</div><button type='button' class='save' onclick='saveNow()'>ENREGISTRER MAINTENANT</button></div>";
 
   sendHtmlChunk(c);
   c = "";
@@ -3683,7 +3622,8 @@ void sendMacroSettingsPage(uint8_t i) {
   sendHtmlChunk(c);
 
   server.sendContent_P(MACRO_PAGE_JS);
-  sendHtmlChunk("</div></body></html>");
+  server.sendContent_P(UI_ENHANCEMENT_JS);
+  sendHtmlChunk("</main></body></html>");
   endChunkedHtml();
 
   }
@@ -3870,7 +3810,7 @@ void handleSaveGeneral() {
     page.reserve(2200);
 
     page =
-      "<!doctype html><html><head><meta charset='utf-8'>"
+      "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
       "<meta name='viewport' content='width=device-width,initial-scale=1'>"
       "<style>"
       "body{font-family:Arial;background:#090b0e;color:#fff;padding:25px}"
@@ -4169,7 +4109,7 @@ void handleSaveExternalWiFi() {
   page.reserve(2400);
 
   page =
-    "<!doctype html><html><head><meta charset='utf-8'>"
+    "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<style>"
     "body{font-family:Arial;background:#090b0e;color:#fff;padding:22px}"
@@ -4747,13 +4687,13 @@ void sendDiagnosticsPage() {
   c.reserve(2200);
 
   c =
-    "<!doctype html><html><head><meta charset='utf-8'>"
+    "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>Diagnostic</title>"
     "<style>html,body{margin:0;background:#090b0e;color:#f4f6f8}</style>"
-    "<link rel='stylesheet' href='/style.css?v=29'></head><body>"
-    "<div class='top'><div class='title'>DIAGNOSTIC</div>"
-    "<a class='iconbtn' href='/settings'>← PARAMETRES</a></div>"
+    "<link rel='stylesheet' href='/style.css?v=310'></head><body>"
+    "<header class='top'><div class='title'>Diagnostic</div>"
+    "<a class='iconbtn' href='/settings#system'>← Système</a></header>"
     "<div class='wrap'>"
     "<div class='section'><h2>Systeme</h2><div class='small'>";
 
@@ -4842,6 +4782,47 @@ void sendDiagnosticsPage() {
   );
 }
 
+// The existing ESP8266HTTPUpdateServer still owns POST /update and flash writes.
+// This page only provides the mobile upload UI; /update remains available unchanged.
+static const char FIRMWARE_PAGE[] PROGMEM = R"FWPAGE(
+<!doctype html><html lang='fr'><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Mise à jour · ON AIR</title><link rel='stylesheet' href='/style.css?v=310'>
+</head><body><header class='top'><div class='title'>Mise à jour</div><a class='iconbtn' href='/settings#system'>← Système</a></header>
+<main class='wrap'><div class='settings-intro'><span class='eyebrow'>Maintenance</span><h1>La suite, simplement.</h1><p>Installez une nouvelle version en quelques instants.</p></div>
+<section class='section'><h2>Installer un firmware</h2><p>Choisissez le fichier ON_AIR_ESP8266_OTA.bin. Vos émissions, logos et connexions sont conservés lors d’une mise à jour compatible.</p>
+<form id='updateForm' method='POST' action='/update' enctype='multipart/form-data'><label for='firmwareFile'>Fichier de mise à jour</label>
+<input id='firmwareFile' type='file' name='firmware' accept='.bin,.bin.gz' required>
+<p class='small'>Laissez le boîtier alimenté et cette page ouverte pendant le transfert.</p><button id='uploadBtn' class='save' type='submit'>INSTALLER LA MISE À JOUR</button></form>
+<progress id='uploadProgress' max='100' value='0' hidden style='width:100%;height:12px;margin-top:20px;accent-color:#8ed5b1'></progress>
+<p id='uploadState' class='small' role='status' aria-live='polite'></p><a id='returnConsole' class='iconbtn' href='/' hidden>Revenir à la console</a></section>
+<p class='small'><a href='/update'>Outils de mise à jour avancés</a></p></main>
+<script>
+const form=document.getElementById('updateForm'),button=document.getElementById('uploadBtn'),progress=document.getElementById('uploadProgress'),message=document.getElementById('uploadState');
+let uploading=false;
+form.addEventListener('submit',event=>{
+ event.preventDefault();if(uploading||!form.reportValidity())return;
+ uploading=true;button.disabled=true;progress.hidden=false;progress.value=0;message.textContent='Transfert en cours…';
+ const xhr=new XMLHttpRequest();xhr.open('POST','/update');xhr.timeout=120000;
+ xhr.upload.onprogress=e=>{if(e.lengthComputable){progress.value=Math.round(e.loaded/e.total*100);message.textContent=progress.value<100?'Transfert · '+progress.value+' %':'Transfert terminé · validation du firmware…';}};
+ const fail=text=>{uploading=false;button.disabled=false;message.textContent=text;};
+ xhr.onload=()=>{
+  if(xhr.status===200&&xhr.responseText.includes('Update Success')){uploading=false;progress.value=100;message.textContent='Mise à jour acceptée. Le boîtier redémarre : patientez une quinzaine de secondes avant de revenir à la console.';document.getElementById('returnConsole').hidden=false;}
+  else{const text=new DOMParser().parseFromString(xhr.responseText,'text/html').body.textContent;fail('Installation refusée. '+(text||'Vérifiez le fichier et réessayez.'));}
+ };
+ xhr.onerror=()=>fail('Connexion interrompue. Vérifiez l’état du boîtier avant de réessayer.');
+ xhr.ontimeout=()=>fail('Le boîtier ne confirme pas la mise à jour. Vérifiez son état avant de réessayer.');
+ xhr.send(new FormData(form));
+});
+window.addEventListener('beforeunload',e=>{if(uploading){e.preventDefault();e.returnValue='';}});
+</script></body></html>
+)FWPAGE";
+
+void sendFirmwarePage() {
+  server.sendHeader("Cache-Control", "no-store");
+  server.send_P(200, PSTR("text/html; charset=utf-8"), FIRMWARE_PAGE);
+}
+
 void handleStyleCSS() {
   Serial.println("[WEB] GET /style.css | heap=" + String(ESP.getFreeHeap()));
 
@@ -4860,7 +4841,7 @@ void handleStyleCSS() {
 // SANS le mot 'Success' attendu par le test Internet Apple.
 // Si iOS ouvre sa petite fenetre CNA, elle va vers les parametres.
 static const char IOS_CAPTIVE_PAGE[] PROGMEM = R"PORTAL(
-<!doctype html><html><head><meta charset='utf-8'>
+<!doctype html><html lang='fr'><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
 <meta http-equiv='Cache-Control' content='no-store'>
 <meta http-equiv='refresh' content='1;url=http://192.168.4.1/settings'>
@@ -5001,6 +4982,7 @@ void setupWebServer() {
   // Les adresses inconnues renvoient vers le mini portail.
   server.onNotFound(redirectCaptivePortal);
 
+  server.on("/firmware", HTTP_GET, sendFirmwarePage);
   httpUpdater.setup(&server, "/update");
 
   // DNS wildcard necessaire au popup de portail captif iOS.

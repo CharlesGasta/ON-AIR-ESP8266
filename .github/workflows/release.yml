@@ -114,6 +114,12 @@ jobs:
           - ON_AIR_ESP8266_V${VERSION_FILE}_COMPLETE.zip — package complet
           EOF
 
+      - name: Use version-specific release notes when available
+        run: |
+          if [ -f "docs/releases/v${VERSION}.md" ]; then
+            cp "docs/releases/v${VERSION}.md" release_notes.md
+          fi
+
       - name: Create or update GitHub Release
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then

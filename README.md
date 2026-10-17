@@ -2,6 +2,12 @@
 
 Contrôleur **ON AIR RGB autonome** basé sur ESP8266 / NodeMCU 1.0 (ESP-12E), avec interface Web mobile.
 
+## V3.1.0 — Studio mobile
+
+Nouvelle console pensée pour le téléphone : quatre émissions avec leurs logos, état de diffusion confirmé et OFF / NOIR toujours accessible. Réglages organisés, sauvegarde automatique et mise à jour OTA avec progression, entièrement sans Internet. Les paramètres existants et le moteur des 36 WS2812E à 100 % sont conservés.
+
+Installation et validation : [notes de version](docs/releases/v3.1.0.md).
+
 ## Fonctions
 
 - 4 macros configurables
