@@ -2237,7 +2237,7 @@ void motionRainbow(float hue, uint8_t out[3], float level) {
 // arc-en-ciel horizontal, ouverture depuis le centre.
 void renderMotionFrame(uint8_t mode, uint8_t r, uint8_t g, uint8_t b,
                        uint8_t intensity, uint32_t elapsed, uint32_t cycle,
-                       uint8_t frame[MOTION_LED_COUNT][3]) {
+                       uint8_t frame[][3]) {
   if(cycle<500)cycle=500;
   float p=(elapsed%cycle)/(float)cycle;
   float peak=(intensity>100?100:intensity)/100.0f;
@@ -2260,7 +2260,7 @@ void renderMotionFrame(uint8_t mode, uint8_t r, uint8_t g, uint8_t b,
   }
 }
 // Retour false apres la derniere image. Aucun delay, acces reseau ou flash.
-bool renderBootFrame(uint32_t elapsed,uint8_t frame[MOTION_LED_COUNT][3]) {
+bool renderBootFrame(uint32_t elapsed,uint8_t frame[][3]) {
   for(uint16_t i=0;i<MOTION_LED_COUNT;i++)motionRGB(frame[i],0,0,0,0);
   if(elapsed>=BOOT_CINEMA_MS)return false;
   for(uint16_t i=0;i<MOTION_LED_COUNT;i++){
@@ -2283,7 +2283,7 @@ bool renderBootFrame(uint32_t elapsed,uint8_t frame[MOTION_LED_COUNT][3]) {
 }
 // END PORTABLE MOTION ENGINE
 
-void showMotionFrame(const uint8_t frame[MOTION_LED_COUNT][3]) {
+void showMotionFrame(const uint8_t frame[][3]) {
   for(uint16_t i=0;i<LED_COUNT;i++)setPixelLevel(i,frame[i][0],frame[i][1],frame[i][2],100);
   pixels.show();
 }
