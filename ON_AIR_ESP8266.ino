@@ -5002,7 +5002,7 @@ async function verifyAttempt(attempt){
     if(state.state==='error'&&state.session===attempt.session){fail('Installation refusée. '+state.error);return;}
     if(state.boot!==attempt.boot&&state.state==='idle'){
      message.textContent='Boîtier redémarré · vérification du firmware installé…';
-     const verified=await firmwareStatus('?verify_size='+attempt.size);
+     const verified=await firmwareStatus('?verify_size='+attempt.size+'&flash_mode='+attempt.flashMode);
      if(verified.boot!==state.boot)continue;
      if(verified.verified_md5===attempt.md5){
       uploading=false;progress.value=100;message.textContent='Mise à jour installée et vérifiée · '+verified.version;
@@ -5025,7 +5025,7 @@ form.addEventListener('submit',async event=>{
   const bytes=new Uint8Array(await file.arrayBuffer());if(bytes[0]!==0xe9)throw Error('Ce fichier n’est pas un firmware ESP8266 .bin.');
   const md5=firmwareMD5(bytes),before=await firmwareStatus();
   const session=Date.now().toString(36)+Math.random().toString(36).slice(2);
-  const attempt={boot:before.boot,size:file.size,md5,session};lastAttempt=attempt;
+  const attempt={boot:before.boot,size:file.size,md5,session,flashMode:bytes[2]};lastAttempt=attempt;
   const xhr=new XMLHttpRequest();xhr.open('POST','/update?'+new URLSearchParams({size:file.size,md5,session}));xhr.timeout=180000;
   message.textContent='Transfert du firmware…';
   xhr.upload.onprogress=e=>{if(e.lengthComputable){progress.value=Math.round(e.loaded/e.total*100);message.textContent=progress.value<100?'Transfert · '+progress.value+' %':'Fichier envoyé · validation par le boîtier…';}};
@@ -5511,19 +5511,21 @@ void handleFirmwareComplete(){
 void serviceFirmwareUpdate(){
   if(otaRestartAt&&(int32_t)(millis()-otaRestartAt)>=0){otaRestartAt=0;ESP.restart();}
 }
-String firmwareFlashMD5(size_t size){
+String firmwareFlashMD5(size_t size,int originalFlashMode){
   if(!size||size>1048576)return String();
   alignas(4) uint8_t buffer[512];MD5Builder hash;hash.begin();
   for(size_t offset=0;offset<size;offset+=sizeof(buffer)){
     size_t n=min(sizeof(buffer),size-offset);
     if(!ESP.flashRead(offset,reinterpret_cast<uint32_t*>(buffer),(n+3)&~size_t(3)))return String();
+    // The ESP8266 updater may adapt header byte 2 to the chip flash mode.
+    if(offset==0&&originalFlashMode>=0&&originalFlashMode<=3)buffer[2]=(uint8_t)originalFlashMode;
     hash.add(buffer,n);yield();
   }
   hash.calculate();return hash.toString();
 }
 void handleFirmwareStatus(){
   String verified;
-  if(server.hasArg("verify_size")&&!otaReceiving&&!otaRestartAt)verified=firmwareFlashMD5(server.arg("verify_size").toInt());
+  if(server.hasArg("verify_size")&&!otaReceiving&&!otaRestartAt)verified=firmwareFlashMD5(server.arg("verify_size").toInt(),server.hasArg("flash_mode")?server.arg("flash_mode").toInt():-1);
   String state=otaReceiving?"receiving":otaRestartAt?"ready":otaError[0]?"error":"idle";
   String out="{\"boot\":\"";out+=String(otaBootId,HEX);out+="\",\"version\":\"";out+=FIRMWARE_VERSION;
   out+="\",\"state\":\"";out+=state;out+="\",\"session\":\"";out+=jsonEscape(String(otaSession));
