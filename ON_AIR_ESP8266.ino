@@ -5084,16 +5084,19 @@ bool libraryWrite(uint8_t id,const char* name,const uint8_t* data){
   File f=LittleFS.open(temp,"w");if(!f)return false;
   bool ok=f.write(reinterpret_cast<const uint8_t*>(header),64)==64&&f.write(data,1356)==1356;
   f.flush();f.close();if(!ok||!LittleFS.rename(temp,path))return false;
-  if(customOwner==id)customOwner=-1;return true;
+  if(customOwner==id)customOwner=-1;
+  return true;
 }
 bool libraryNamesEqual(const char* a,const char* b){
   uint8_t previousA=0,previousB=0;
   while(*a&&*b){
     uint8_t x=(uint8_t)*a++,y=(uint8_t)*b++,rawA=x,rawB=y;
-    if(x>='A'&&x<='Z')x+=32;if(y>='A'&&y<='Z')y+=32;
+    if(x>='A'&&x<='Z')x+=32;
+    if(y>='A'&&y<='Z')y+=32;
     if(previousA==0xC3&&x>=0x80&&x<=0x9E&&x!=0x97)x+=32;
     if(previousB==0xC3&&y>=0x80&&y<=0x9E&&y!=0x97)y+=32;
-    if(x!=y)return false;previousA=rawA;previousB=rawB;
+    if(x!=y)return false;
+    previousA=rawA;previousB=rawB;
   }
   return !*a&&!*b;
 }
@@ -5188,7 +5191,8 @@ void updateLibraryPreview(){
   if(!libraryPreviewActive)return;
   if(!settingsPreviewActive||customOwner!=-2){libraryPreviewActive=false;libraryPreviewToken[0]=0;customOwner=-1;return;}
   if((long)(millis()-settingsPreviewUntil)>=0){stopLibraryPreview();return;}
-  if(millis()-libraryPreviewLastFrame<33UL)return;libraryPreviewLastFrame=millis();
+  if(millis()-libraryPreviewLastFrame<33UL)return;
+  libraryPreviewLastFrame=millis();
   uint8_t frame[36][3];
   if(libraryPreviewPlaying)renderCueFrame(customData,100,millis()-libraryPreviewStarted,frame);
   else memcpy(frame,customData+12+libraryPreviewCue*112,108);

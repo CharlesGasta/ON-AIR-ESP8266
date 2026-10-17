@@ -157,11 +157,13 @@ int main(){
  assert(libraryWrite(32,"Aurore",files["/custom0.bin"].data()));char savedName[64];assert(libraryReadName(32,savedName)&&std::string(savedName)=="Aurore");
  auto namedFile=files["/anim32.bin"];failRename=true;assert(!libraryWrite(32,"Replacement",files["/custom4.bin"].data()));assert(files["/anim32.bin"]==namedFile);failRename=false;
  customOwner=-1;config.macro[0].intensity=50;renderLibraryOutput(0,32,0);assert(displayed[0][0]==100);config.macro[0].intensity=100;
- motionSettings.mode[0]=32;motionSettings.checksum=configChecksum(reinterpret_cast<uint8_t*>(&motionSettings),sizeof(motionSettings)-4);assert(validMotionSettings(motionSettings));
+ resetMotionSettings();motionSettings.mode[0]=32;motionSettings.checksum=configChecksum(reinterpret_cast<uint8_t*>(&motionSettings),sizeof(motionSettings)-4);assert(validMotionSettings(motionSettings));
 
  strcpy(config.macro[0].name,"ONE FM");motionSettings.mode[0]=10;config.macro[0].alertAnimation=ALERT_CUSTOM;customOwner=-1;migrateAnimationLibrary();
  assert(motionSettings.mode[0]==32&&config.macro[0].alertAnimation==36&&files.count("/library.migrated"));
  assert(libraryReadName(36,savedName));auto originalName=files["/anim32.bin"];migrateAnimationLibrary();assert(files["/anim32.bin"]==originalName);
+ for(uint8_t channel=0;channel<4;channel++){config.macro[channel].intensity=25*(channel+1);renderLibraryOutput(channel,32,0);assert(displayed[0][0]==50*(channel+1));}
+ config.macro[0].intensity=100;
  auto beforePreviewFiles=files;assert(loadCustom(0));customOwner=-2;libraryPreviewActive=true;settingsPreviewActive=true;libraryPreviewCue=0;libraryPreviewPlaying=false;settingsPreviewUntil=clockMs+3000;libraryPreviewLastFrame=clockMs-33;
  updateLibraryPreview();assert(displayed[0][0]==200&&files==beforePreviewFiles);
  clockMs+=3001;updateLibraryPreview();assert(!libraryPreviewActive&&!settingsPreviewActive&&displayed[0][0]==0);
