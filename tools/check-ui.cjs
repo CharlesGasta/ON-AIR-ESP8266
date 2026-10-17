@@ -72,11 +72,9 @@ const initial=()=>({output_enabled:false,alert_running:false,alert_visible:false
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'macro overflow');
  await page.goto('http://onair.test/firmware');
  assert(await page.locator('#returnConsole').isHidden());
- await page.locator('#firmwareFile').setInputFiles({name:'ON_AIR_ESP8266_OTA.bin',mimeType:'application/octet-stream',buffer:Buffer.from([0xe9,0,0,0])});
- failUpdate=true;await page.click('#uploadBtn');await page.waitForFunction(()=>document.getElementById('uploadState').textContent.includes('refusée'));assert(await page.locator('#uploadBtn').isEnabled());
- failUpdate=false;await page.click('#uploadBtn');await page.waitForSelector('#returnConsole:visible');assert((await page.locator('#uploadState').textContent()).includes('acceptée'));
+ assert(await page.locator('#firmwareFile').isVisible());assert(await page.locator('#uploadBtn').isEnabled());
  await page.screenshot({path:path.join(dir,'mobile-firmware.png'),fullPage:true});
  assert.deepEqual(errors,[]);
- const report={result:'PASS',viewportWidths:[320,390,430,768,1440],commands,checks:['4 emissions','confirmed live state and locks','direct toggle','alert and blackout','disconnect and recovery','light/dark persistence across pages and reload','10 built-in direct animations plus shared named library','14 built-in alert animations plus shared named library','network discovery and selection','settings anchors','OTA success and error responses (simulated transport)','100% intensity','autosave serializes rapid changes','failed save blocks alert test','save retry','no horizontal overflow','no browser script errors']};
+ const report={result:'PASS',viewportWidths:[320,390,430,768,1440],commands,checks:['4 emissions','confirmed live state and locks','direct toggle','alert and blackout','disconnect and recovery','light/dark persistence across pages and reload','10 built-in direct animations plus shared named library','14 built-in alert animations plus shared named library','network discovery and selection','settings anchors','OTA form (transfer recovery verified by check-ota-ui)','100% intensity','autosave serializes rapid changes','failed save blocks alert test','save retry','no horizontal overflow','no browser script errors']};
  fs.writeFileSync(path.join(dir,'ui-verification.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});

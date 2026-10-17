@@ -31,10 +31,10 @@
 #include <EEPROM.h>
 #include <LittleFS.h>
 #include <ESP8266mDNS.h>
-#include <ESP8266HTTPUpdateServer.h>
+#include <Updater.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.4.0 LIBRARY 36LED 100PCT"
+#define FIRMWARE_VERSION "3.4.1 OTA 36LED 100PCT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -1517,7 +1517,6 @@ bool configImportApplied = false;
 
 ESP8266WebServer server(80);
 DNSServer dnsServer;
-ESP8266HTTPUpdateServer httpUpdater;
 File uploadFile;
 
 int activeMacro = -1;
@@ -4955,8 +4954,7 @@ void sendDiagnosticsPage() {
   );
 }
 
-// The existing ESP8266HTTPUpdateServer still owns POST /update and flash writes.
-// This page only provides the mobile upload UI; /update remains available unchanged.
+// Minimal OTA transport with size/MD5 checks, acknowledgement before reboot and post-boot verification.
 static const char FIRMWARE_PAGE[] PROGMEM = R"FWPAGE(
 <!doctype html><html lang='fr'><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
@@ -4965,28 +4963,82 @@ static const char FIRMWARE_PAGE[] PROGMEM = R"FWPAGE(
 <main class='wrap'><div class='settings-intro'><span class='eyebrow'>Maintenance</span><h1>Mise à jour</h1><p>Installez une nouvelle version en quelques instants.</p></div>
 <section class='section'><h2>Installer un firmware</h2><p>Choisissez le fichier ON_AIR_ESP8266_OTA.bin. Vos émissions, logos et connexions sont conservés lors d’une mise à jour compatible.</p>
 <form id='updateForm' method='POST' action='/update' enctype='multipart/form-data'><label for='firmwareFile'>Fichier de mise à jour</label>
-<input id='firmwareFile' type='file' name='firmware' accept='.bin,.bin.gz' required>
+<input id='firmwareFile' type='file' name='firmware' accept='.bin' required>
 <p class='small'>Laissez le boîtier alimenté et cette page ouverte pendant le transfert.</p><button id='uploadBtn' class='save' type='submit'>INSTALLER LA MISE À JOUR</button></form>
 <progress id='uploadProgress' max='100' value='0' hidden style='width:100%;height:12px;margin-top:20px;accent-color:#8ed5b1'></progress>
-<p id='uploadState' class='small' role='status' aria-live='polite'></p><a id='returnConsole' class='iconbtn' href='/' hidden>Revenir à la console</a></section>
-<p class='small'><a href='/update'>Outils de mise à jour avancés</a></p></main>
+<p id='uploadState' class='small' role='status' aria-live='polite'></p><button id='verifyAgain' type='button' class='save' hidden>Vérifier le boîtier</button><a id='returnConsole' class='iconbtn' href='/' hidden>Revenir à la console</a></section>
+</main>
 <script>
-const form=document.getElementById('updateForm'),button=document.getElementById('uploadBtn'),progress=document.getElementById('uploadProgress'),message=document.getElementById('uploadState');
-let uploading=false;
-form.addEventListener('submit',event=>{
+const form=document.getElementById('updateForm'),button=document.getElementById('uploadBtn'),progress=document.getElementById('uploadProgress'),message=document.getElementById('uploadState'),verifyButton=document.getElementById('verifyAgain');
+let uploading=false,verification=null,lastAttempt=null;
+function firmwareMD5(bytes){
+ const size=bytes.length,padded=new Uint8Array(((size+8>>>6)+1)*64);padded.set(bytes);padded[size]=128;
+ const view=new DataView(padded.buffer);view.setUint32(padded.length-8,(size*8)>>>0,true);view.setUint32(padded.length-4,Math.floor(size/536870912),true);
+ const shifts=[7,12,17,22,5,9,14,20,4,11,16,23,6,10,15,21],constants=Array.from({length:64},(_,n)=>(Math.abs(Math.sin(n+1))*4294967296)>>>0);
+ let a0=0x67452301,b0=0xefcdab89,c0=0x98badcfe,d0=0x10325476;
+ for(let offset=0;offset<padded.length;offset+=64){let a=a0,b=b0,c=c0,d=d0;
+  for(let n=0;n<64;n++){let f,g;if(n<16){f=(b&c)|(~b&d);g=n;}else if(n<32){f=(d&b)|(~d&c);g=(5*n+1)%16;}else if(n<48){f=b^c^d;g=(3*n+5)%16;}else{f=c^(b|~d);g=(7*n)%16;}
+   const shift=shifts[(n>>>4)*4+n%4],value=(a+f+constants[n]+view.getUint32(offset+g*4,true))|0;
+   const next=(b+((value<<shift)|(value>>>(32-shift))))|0;a=d;d=c;c=b;b=next;
+  }
+  a0=(a0+a)|0;b0=(b0+b)|0;c0=(c0+c)|0;d0=(d0+d)|0;
+ }
+ return [a0,b0,c0,d0].flatMap(value=>[0,8,16,24].map(shift=>((value>>>shift)&255).toString(16).padStart(2,'0'))).join('');
+}
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function firmwareStatus(extra=''){
+ const r=await fetch('/api/firmware/status'+extra,{cache:'no-store',signal:AbortSignal.timeout(6000)});if(!r.ok)throw Error('Boîtier indisponible');return r.json();
+}
+function fail(text){uploading=false;button.disabled=false;message.textContent=text;}
+async function verifyAttempt(attempt){
+ if(verification)return verification;
+ uploading=true;button.disabled=true;verifyButton.hidden=true;
+ verification=(async()=>{
+  const deadline=Date.now()+75000;
+  while(Date.now()<deadline){
+   await wait(1500);
+   try{
+    const state=await firmwareStatus();
+    if(state.state==='error'&&state.session===attempt.session){fail('Installation refusée. '+state.error);return;}
+    if(state.boot!==attempt.boot&&state.state==='idle'){
+     message.textContent='Boîtier redémarré · vérification du firmware installé…';
+     const verified=await firmwareStatus('?verify_size='+attempt.size);
+     if(verified.boot!==state.boot)continue;
+     if(verified.verified_md5===attempt.md5){
+      uploading=false;progress.value=100;message.textContent='Mise à jour installée et vérifiée · '+verified.version;
+      document.getElementById('returnConsole').hidden=false;return;
+     }
+     fail('Le boîtier a redémarré, mais le fichier choisi n’est pas installé. La mise à jour n’est pas confirmée.');verifyButton.hidden=false;return;
+    }
+   }catch(e){}
+   message.textContent='Attente du boîtier et vérification de l’installation…';
+  }
+  fail('Installation non confirmée. Reconnectez-vous au Wi-Fi du boîtier, puis cliquez sur « Vérifier le boîtier » avant de relancer un transfert.');verifyButton.hidden=false;
+ })().finally(()=>{verification=null;});return verification;
+}
+form.addEventListener('submit',async event=>{
  event.preventDefault();if(uploading||!form.reportValidity())return;
- uploading=true;button.disabled=true;progress.hidden=false;progress.value=0;message.textContent='Transfert en cours…';
- const xhr=new XMLHttpRequest();xhr.open('POST','/update');xhr.timeout=120000;
- xhr.upload.onprogress=e=>{if(e.lengthComputable){progress.value=Math.round(e.loaded/e.total*100);message.textContent=progress.value<100?'Transfert · '+progress.value+' %':'Transfert terminé · validation du firmware…';}};
- const fail=text=>{uploading=false;button.disabled=false;message.textContent=text;};
- xhr.onload=()=>{
-  if(xhr.status===200&&xhr.responseText.includes('Update Success')){uploading=false;progress.value=100;message.textContent='Mise à jour acceptée. Le boîtier redémarre : patientez une quinzaine de secondes avant de revenir à la console.';document.getElementById('returnConsole').hidden=false;}
-  else{const text=new DOMParser().parseFromString(xhr.responseText,'text/html').body.textContent;fail('Installation refusée. '+(text||'Vérifiez le fichier et réessayez.'));}
- };
- xhr.onerror=()=>fail('Connexion interrompue. Vérifiez l’état du boîtier avant de réessayer.');
- xhr.ontimeout=()=>fail('Le boîtier ne confirme pas la mise à jour. Vérifiez son état avant de réessayer.');
- xhr.send(new FormData(form));
+ uploading=true;button.disabled=true;verifyButton.hidden=true;document.getElementById('returnConsole').hidden=true;progress.hidden=false;progress.value=0;message.textContent='Préparation et vérification du fichier…';
+ const file=document.getElementById('firmwareFile').files[0];
+ try{
+  if(!file||file.size<32||file.size>1048576||!file.name.toLowerCase().endsWith('.bin'))throw Error('Choisissez le fichier firmware .bin.');
+  const bytes=new Uint8Array(await file.arrayBuffer());if(bytes[0]!==0xe9)throw Error('Ce fichier n’est pas un firmware ESP8266 .bin.');
+  const md5=firmwareMD5(bytes),before=await firmwareStatus();
+  const session=Date.now().toString(36)+Math.random().toString(36).slice(2);
+  const attempt={boot:before.boot,size:file.size,md5,session};lastAttempt=attempt;
+  const xhr=new XMLHttpRequest();xhr.open('POST','/update?'+new URLSearchParams({size:file.size,md5,session}));xhr.timeout=180000;
+  message.textContent='Transfert du firmware…';
+  xhr.upload.onprogress=e=>{if(e.lengthComputable){progress.value=Math.round(e.loaded/e.total*100);message.textContent=progress.value<100?'Transfert · '+progress.value+' %':'Fichier envoyé · validation par le boîtier…';}};
+  xhr.onload=()=>{
+   let result;try{result=JSON.parse(xhr.responseText);}catch(e){}
+   if(xhr.status===200&&result&&result.ok){message.textContent='Fichier validé · attente du redémarrage…';verifyAttempt(attempt);}
+   else fail('Installation refusée. '+(result&&result.error?result.error:'Le boîtier n’a pas validé le fichier.'));
+  };
+  xhr.onerror=xhr.ontimeout=()=>{message.textContent='Connexion perdue · vérification du boîtier avant tout nouvel essai…';verifyAttempt(attempt);};
+  xhr.send(new FormData(form));
+ }catch(e){fail(e.message||'Connexion au boîtier non confirmée. Réessayez lorsque le boîtier est accessible.');}
 });
+verifyButton.onclick=()=>{if(lastAttempt)verifyAttempt(lastAttempt);};
 window.addEventListener('beforeunload',e=>{if(uploading){e.preventDefault();e.returnValue='';}});
 </script></body></html>
 )FWPAGE";
@@ -5380,39 +5432,103 @@ void handleCustomTest(){
   server.send(200,"text/plain","Test : 15 secondes maximum");
 }
 
-// Updater onEnd also fires during begin/reset: only a completed HTTP upload
-// with no updater error is eligible for the success signal.
-static bool otaVisualActive=false;
-static unsigned long otaVisualLastFrame=0,otaErrorUntil=0;
-void otaVisualStart(){
-  blackout();otaVisualActive=true;otaErrorUntil=0;otaVisualLastFrame=0;
-  setRGBLevel(255,170,0,28);
+// BEGIN OTA STATE
+static bool otaReceiving=false,otaValidated=false,otaRejected=false,otaRequestOpen=false;
+static size_t otaReceived=0,otaExpected=0;
+static uint32_t otaRestartAt=0,otaBootId=0;
+static char otaError[192]={},otaExpectedMD5[33]={},otaSession[41]={};
+// END OTA STATE
+void otaFail(const char* error){
+  snprintf(otaError,sizeof(otaError),"%s",error);otaValidated=false;otaReceiving=false;
 }
-void otaVisualProgress(size_t received,size_t total){
-  if(!otaVisualActive)return;
-  unsigned long now=millis();if(now-otaVisualLastFrame<40UL)return;
-  otaVisualLastFrame=now;
-  uint8_t level=20+(uint8_t)(18*(.5f-.5f*cosf(now/1000.0f*6.2831853f)));
-  setRGBLevel(255,170,0,level);
+void otaStopEffects(){
+  blackout();libraryPreviewActive=false;libraryPreviewToken[0]=0;customOwner=-1;
 }
-void otaVisualError(uint8_t error){
-  blackout();otaVisualActive=false;otaErrorUntil=millis()+2500UL;setRGBLevel(255,25,0,35);
+void otaCancelWriter(){
+  if(Update.isRunning())Update.end(false);
 }
-void otaVisualEnd(){
-  if(!otaVisualActive)return;
-  if(server.upload().status!=UPLOAD_FILE_END||Update.hasError()){
-    if(server.upload().status==UPLOAD_FILE_ABORTED)otaVisualError(0);
-    return;
+void handleFirmwareUpload(){
+  HTTPUpload& u=server.upload();
+  if(u.status==UPLOAD_FILE_START){
+    otaRejected=otaRestartAt!=0||otaRequestOpen;
+    if(otaRejected)return;
+    otaRequestOpen=true;otaValidated=false;otaReceiving=false;otaReceived=0;otaExpected=0;
+    otaError[0]=0;otaExpectedMD5[0]=0;
+    String session=server.arg("session");snprintf(otaSession,sizeof(otaSession),"%s",session.c_str());
+    if(u.name!="firmware"){otaFail("Sélectionnez un fichier firmware .bin.");return;}
+    String sizeArg=server.arg("size"),md5=server.arg("md5");md5.toLowerCase();
+    if(sizeArg.length()){
+      for(size_t i=0;i<sizeArg.length();i++)if(sizeArg[i]<'0'||sizeArg[i]>'9'){otaFail("Taille du fichier invalide.");return;}
+      long size=sizeArg.toInt();if(size<32||size>1048576){otaFail("Taille du firmware invalide.");return;}otaExpected=(size_t)size;
+      if(md5.length()!=32){otaFail("Empreinte du fichier manquante.");return;}
+    }
+    if(md5.length()){
+      if(md5.length()!=32){otaFail("Empreinte du fichier invalide.");return;}
+      for(size_t i=0;i<32;i++)if(!((md5[i]>='0'&&md5[i]<='9')||(md5[i]>='a'&&md5[i]<='f'))){otaFail("Empreinte du fichier invalide.");return;}
+      snprintf(otaExpectedMD5,sizeof(otaExpectedMD5),"%s",md5.c_str());
+    }
+    uint32_t freeSpace=ESP.getFreeSketchSpace();
+    uint32_t maximum=freeSpace>0x1000?(freeSpace-0x1000)&0xFFFFF000:0;
+    if(!maximum||(otaExpected&&otaExpected>maximum)){otaFail("Espace OTA insuffisant pour ce fichier.");return;}
+    // Exactly one blackout BEFORE flash writes. No pixel.show or animation callbacks during OTA.
+    otaStopEffects();WiFi.setSleepMode(WIFI_NONE_SLEEP);
+    if(!Update.begin(otaExpected?otaExpected:maximum,U_FLASH)){otaFail(Update.getErrorString().c_str());return;}
+    if(otaExpectedMD5[0]&&!Update.setMD5(otaExpectedMD5)){otaFail("Empreinte refusée.");otaCancelWriter();return;}
+    otaReceiving=true;
+  }else if(u.status==UPLOAD_FILE_WRITE){
+    if(otaRejected||!otaReceiving||otaError[0])return;
+    if(!otaReceived&&(!u.currentSize||u.buf[0]!=0xE9)){otaFail("Le fichier choisi n’est pas un firmware ESP8266 .bin.");otaCancelWriter();return;}
+    if(otaExpected&&u.currentSize>otaExpected-otaReceived){otaFail("Le fichier dépasse la taille annoncée.");otaCancelWriter();return;}
+    if(Update.write(u.buf,u.currentSize)!=u.currentSize){otaFail(Update.getErrorString().c_str());otaCancelWriter();return;}
+    otaReceived+=u.currentSize;
+  }else if(u.status==UPLOAD_FILE_END){
+    if(otaRejected||!otaReceiving||otaError[0])return;
+    if(!otaReceived||otaReceived!=u.totalSize||(otaExpected&&otaReceived!=otaExpected)){
+      otaFail("Transfert incomplet. Le boîtier n’a pas reçu tout le fichier.");otaCancelWriter();return;
+    }
+    if(!Update.end(otaExpected==0)||Update.hasError()){
+      otaFail(Update.getErrorString().c_str());otaCancelWriter();return;
+    }
+    otaReceiving=false;otaValidated=true;
+  }else if(u.status==UPLOAD_FILE_ABORTED){
+    if(!otaRejected){otaFail("Transfert interrompu avant validation.");otaCancelWriter();}otaRequestOpen=false;
   }
-  otaVisualActive=false;
-  // Bounded confirmation after flash validation, before the library restarts.
-  for(uint8_t n=0;n<2;n++){
-    setRGBLevel(30,255,80,40);delay(220);ledsOff();delay(80);
-  }
-  setRGBLevel(30,255,80,35);
+  yield();
 }
-void updateOTAVisual(){
-  if(otaErrorUntil&&(long)(millis()-otaErrorUntil)>=0){otaErrorUntil=0;ledsOff();}
+void handleFirmwareComplete(){
+  otaRequestOpen=false;
+  server.sendHeader("Cache-Control","no-store");server.sendHeader("Connection","close");
+  if(otaRejected||otaRestartAt){server.send(409,"application/json","{\"ok\":false,\"error\":\"Une mise à jour est déjà en cours.\"}");return;}
+  if(!otaValidated||otaError[0]){
+    if(!otaError[0])otaFail("Aucun firmware validé n’a été reçu.");
+    server.send(400,"application/json",String("{\"ok\":false,\"error\":\"")+jsonEscape(String(otaError))+"\"}");return;
+  }
+  server.client().setNoDelay(true);
+  server.send(200,"application/json",String("{\"ok\":true,\"md5\":\"")+otaExpectedMD5+"\"}");
+  // The acknowledgement is sent first; the main loop restarts later without animations.
+  otaRestartAt=millis()+1800UL;
+}
+void serviceFirmwareUpdate(){
+  if(otaRestartAt&&(int32_t)(millis()-otaRestartAt)>=0){otaRestartAt=0;ESP.restart();}
+}
+String firmwareFlashMD5(size_t size){
+  if(!size||size>1048576)return String();
+  alignas(4) uint8_t buffer[512];MD5Builder hash;hash.begin();
+  for(size_t offset=0;offset<size;offset+=sizeof(buffer)){
+    size_t n=min(sizeof(buffer),size-offset);
+    if(!ESP.flashRead(offset,reinterpret_cast<uint32_t*>(buffer),(n+3)&~size_t(3)))return String();
+    hash.add(buffer,n);yield();
+  }
+  hash.calculate();return hash.toString();
+}
+void handleFirmwareStatus(){
+  String verified;
+  if(server.hasArg("verify_size")&&!otaReceiving&&!otaRestartAt)verified=firmwareFlashMD5(server.arg("verify_size").toInt());
+  String state=otaReceiving?"receiving":otaRestartAt?"ready":otaError[0]?"error":"idle";
+  String out="{\"boot\":\"";out+=String(otaBootId,HEX);out+="\",\"version\":\"";out+=FIRMWARE_VERSION;
+  out+="\",\"state\":\"";out+=state;out+="\",\"session\":\"";out+=jsonEscape(String(otaSession));
+  out+="\",\"error\":\"";out+=jsonEscape(String(otaError));out+="\",\"verified_md5\":\"";out+=verified;out+="\"}";
+  server.sendHeader("Cache-Control","no-store");server.send(200,"application/json",out);
 }
 
 void setupWebServer() {
@@ -5518,11 +5634,9 @@ void setupWebServer() {
   server.onNotFound(redirectCaptivePortal);
 
   server.on("/firmware", HTTP_GET, sendFirmwarePage);
-  Update.onStart(otaVisualStart);
-  Update.onProgress(otaVisualProgress);
-  Update.onError(otaVisualError);
-  Update.onEnd(otaVisualEnd);
-  httpUpdater.setup(&server, "/update");
+  server.on("/update",HTTP_GET,sendFirmwarePage);
+  server.on("/update",HTTP_POST,handleFirmwareComplete,handleFirmwareUpload);
+  server.on("/api/firmware/status",HTTP_GET,handleFirmwareStatus);
 
   // DNS wildcard necessaire au popup de portail captif iOS.
   // Les clients connectes a l'AP utilisent l'ESP comme DNS et tous les domaines
@@ -5807,6 +5921,7 @@ void updateExternalWiFi() {
 }
 
 void setup() {
+  otaBootId=ESP.random();
   Serial.begin(115200);
   delay(150);
   Serial.println();
@@ -5866,8 +5981,10 @@ void loop() {
   // Le serveur HTTP est toujours prioritaire.
   server.handleClient();
 
+  serviceFirmwareUpdate();
+  if(otaReceiving||otaRestartAt){yield();return;}
+
   updateLibraryPreview();
-  updateOTAVisual();
   updateAlert();
   updateSettingsPreview();
   updateDirectMotion();
