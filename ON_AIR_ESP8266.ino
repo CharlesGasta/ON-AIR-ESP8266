@@ -34,7 +34,7 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.3.0 CUES 36LED 100PCT"
+#define FIRMWARE_VERSION "3.3.1 CUES 36LED 100PCT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -1377,7 +1377,8 @@ enum AlertAnimation : uint8_t {
   ALERT_IRIS = 10,
   ALERT_RAINBOW = 11,
   ALERT_SWEEP_TB = 12,
-  ALERT_SWEEP_BT = 13
+  ALERT_SWEEP_BT = 13,
+  ALERT_CUSTOM = 14
 };
 
 // V2.6 : choix d'animation d'alerte par macro.
@@ -2059,7 +2060,7 @@ void loadConfig() {
 
     config.macro[i].intensity = constrain(config.macro[i].intensity, 0, 100);
     config.macro[i].idleIntensity = constrain(config.macro[i].idleIntensity, 0, 100);
-    config.macro[i].alertAnimation = constrain(config.macro[i].alertAnimation, (uint8_t)ALERT_CLASSIC, (uint8_t)ALERT_SWEEP_BT);
+    config.macro[i].alertAnimation = constrain(config.macro[i].alertAnimation, (uint8_t)ALERT_CLASSIC, (uint8_t)ALERT_CUSTOM);
     config.macro[i].alertDuration = constrain(config.macro[i].alertDuration, 1, 60);
     config.macro[i].blinkMs = constrain(config.macro[i].blinkMs, 100, 2000);
     config.macro[i].alertEndOn = true;
@@ -2365,6 +2366,7 @@ static uint8_t customData[1356];
 static int customOwner=-1;
 static bool customValid=false;
 static bool customPreview=false;
+static bool customPreviewAlert=false;
 uint16_t customWord(const uint8_t* p){return p[0]|((uint16_t)p[1]<<8);}
 bool validCustom(const uint8_t* p){
   if(memcmp(p,"CUE1",4)||p[4]!=1||p[5]<1||p[5]>12||p[6]||p[7])return false;
@@ -2385,9 +2387,9 @@ bool loadCustom(uint8_t i){
   bool ok=f.size()==sizeof(customData)&&f.read(customData,sizeof(customData))==sizeof(customData);
   f.close();customValid=ok&&validCustom(customData);return customValid;
 }
-void renderCustomOutput(uint8_t i,unsigned long elapsed){
+void renderCustomOutput(uint8_t i,unsigned long elapsed,bool alert=false){
   MacroConfig& m=config.macro[i];
-  if(!loadCustom(i)){setRGBLevel(m.r,m.g,m.b,m.intensity);return;}
+  if(!loadCustom(i+(alert?MACRO_COUNT:0))){setRGBLevel(m.r,m.g,m.b,m.intensity);return;}
   uint32_t total=0;for(uint8_t n=0;n<customData[5];n++)total+=customWord(customData+8+n*112)+customWord(customData+10+n*112);
   uint32_t t=elapsed%total;
   for(uint8_t n=0;n<customData[5];n++){
@@ -2409,7 +2411,7 @@ void renderMacroDirect(uint8_t i) {
   if (i >= MACRO_COUNT) return;
 
   MacroConfig& m = config.macro[i];
-  if(!alertRunning&&(motionSettings.mode[i]==10||(settingsPreviewActive&&customPreview))){renderCustomOutput(i,millis()-directMotionStartedAt);return;}
+  if(!alertRunning&&(motionSettings.mode[i]==10||(settingsPreviewActive&&customPreview))){renderCustomOutput(i,millis()-directMotionStartedAt,settingsPreviewActive&&customPreview&&customPreviewAlert);return;}
   if(!alertRunning&&motionSettings.mode[i])renderSpatialMotion(motionSettings.mode[i],m.r,m.g,m.b,m.intensity,millis()-directMotionStartedAt,motionSettings.cycleMs[i],true);
   else setRGBLevel(m.r, m.g, m.b, m.intensity);
 }
@@ -2706,6 +2708,11 @@ void updateAlert() {
       break;
     }
 
+    case ALERT_CUSTOM: {
+      if(now-alertAnimLastFrameAt<33UL)return;
+      alertAnimLastFrameAt=now;renderCustomOutput(alertMacro,elapsed,true);
+      alertVisible=true;break;
+    }
     case ALERT_SWEEP_LR:
     case ALERT_SWEEP_RL:
     case ALERT_BREATHE:
@@ -3303,7 +3310,8 @@ function updateAnimationHelp(){
     'La lumière s’ouvre depuis le centre du logo.',
     'Un arc-en-ciel traverse le logo.',
     'Balayage vers le bas, uniquement sur les côtés.',
-    'Balayage vers le haut, uniquement sur les côtés.'
+    'Balayage vers le haut, uniquement sur les côtés.',
+    'La séquence personnalisée d’alerte boucle pendant la durée réglée, puis le DIRECT reprend.'
   ];
 
   e.textContent=txt[v]||txt[0];
@@ -3398,7 +3406,7 @@ void sendSettingsPage() {
     "<main class='wrap'>"
     ""
     "<nav class='jumpnav' aria-label='Rubriques'><a href='#macros'>Émissions</a>"
-    "<a href='#general'>Boîtier</a><a href='#network'>Wi-Fi</a><a href='#system'>Système</a></nav>"
+    "<a href='#animations'>Éditeur d’animation</a><a href='#general'>Boîtier</a><a href='#network'>Wi-Fi</a><a href='#system'>Système</a></nav>"
 
     ;
   sendHtmlChunk(c);
@@ -3453,6 +3461,15 @@ void sendSettingsPage() {
   }
 
   sendHtmlChunk("</section>");
+  sendHtmlChunk("<section id='animations' class='section'><h2>Éditeur d’animation</h2>");
+  for(uint8_t i=0;i<MACRO_COUNT;i++){
+    c="<h3>";c+=htmlEscape(String(config.macro[i].name));c+="</h3><div class='grid2'>";
+    c+="<a class='save' href='/animation?i=";c+=String(i);c+="'>DIRECT</a>";
+    c+="<a class='save' href='/animation?i=";c+=String(i);c+="&amp;kind=alert'>ALERTE</a></div>";
+    sendHtmlChunk(c);c="";
+  }
+  sendHtmlChunk("</section>");
+
 
 
   c =
@@ -3680,7 +3697,7 @@ void sendMacroSettingsPage(uint8_t i) {
     if(motionSettings.cycleMs[i]==cycles[n])c += " selected";
     c += ">";c += String(cycles[n]/1000);c += " s</option>";
   }
-  c += "</select><p><a href='/animation?i=";c += String(i);c += "'>Créer une animation personnalisée →</a></p></section>";
+  c += "</select><div class='editor-link'><a class='save' href='/animation?i=";c += String(i);c += "'>Éditeur d’animation →</a></div></section>";
 
   sendHtmlChunk(c);
   c = "";
@@ -3747,7 +3764,10 @@ void sendMacroSettingsPage(uint8_t i) {
   c += "<option value='11'";if(m.alertAnimation==11)c += " selected";c += ">Arc-en-ciel horizontal</option>";
   c += "<option value='12'";if(m.alertAnimation==ALERT_SWEEP_TB)c += " selected";c += ">Balayage haut → bas</option>";
   c += "<option value='13'";if(m.alertAnimation==ALERT_SWEEP_BT)c += " selected";c += ">Balayage bas → haut</option>";
+  c += "<option value='14'";if(m.alertAnimation==ALERT_CUSTOM)c += " selected";c += ">Animation personnalisée</option>";
   c += "</select>";
+  c += "<div class='editor-link'><a class='save' href='/animation?i=";c+=String(i);c+="&amp;kind=alert'>Éditeur d’animation d’alerte →</a></div>";
+
 
   c += "<div id='animationHelp' class='small' style='margin-top:7px'></div>";
   c += "<div class='grid2'><div><label>Durée de l’alerte</label>";
@@ -4395,7 +4415,7 @@ bool readMacroRequest(uint8_t& idx,
   idleIntensity = constrain(server.arg("idleIntensity").toInt(), 0, 100);
   idleOff = server.arg("idleOff") == "1";
 
-  alertAnimation = constrain(server.arg("alertAnimation").toInt(), (int)ALERT_CLASSIC, (int)ALERT_SWEEP_BT);
+  alertAnimation = constrain(server.arg("alertAnimation").toInt(), (int)ALERT_CLASSIC, (int)ALERT_CUSTOM);
   alertDuration = constrain(server.arg("alertDuration").toInt(), 1, 60);
   blinkMs = constrain(server.arg("blinkMs").toInt(), 100, 2000);
 
@@ -4680,7 +4700,7 @@ void handleFactoryReset() {
   setDefaults();
   saveConfig();
   for (uint8_t i=0;i<MACRO_COUNT;i++) {
-    char customPath[24];snprintf(customPath,sizeof(customPath),"/custom%u.bin",i);LittleFS.remove(customPath);
+    char customPath[24];snprintf(customPath,sizeof(customPath),"/custom%u.bin",i);LittleFS.remove(customPath);snprintf(customPath,sizeof(customPath),"/custom%u.bin",i+MACRO_COUNT);LittleFS.remove(customPath);
     String png = "/m" + String(i+1) + ".png";
     String jpg = "/m" + String(i+1) + ".jpg";
     if (LittleFS.exists(png)) LittleFS.remove(png);
@@ -5012,9 +5032,10 @@ void redirectCaptivePortal() {
 
 static const char ANIMATION_EDITOR_HTML[] PROGMEM = R"EDITOR(<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Animation · ON AIR</title><script>try{document.documentElement.dataset.theme=localStorage.getItem('onair-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch(e){}</script><link rel="stylesheet" href="/style.css"><style>
 body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.editor{max-width:680px;margin:auto;padding:22px 20px 50px}.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.editor .bar button,.editor .cues button{background:var(--panel);color:var(--text);border:1px solid var(--line)}.editor .cues button.selected{background:#4669e8;color:white}.board{position:relative;margin:30px 17px;width:calc(100% - 34px);height:210px;border-radius:28px;background:var(--panel);box-shadow:inset 0 0 35px #00000010}.led{position:absolute;width:25px;height:25px;min-height:0;padding:0;border-radius:50%;transform:translate(-50%,-50%);border:2px solid #777;box-shadow:0 0 8px var(--led)}.led[aria-pressed=true]{outline:3px solid #6489ff;outline-offset:3px}.board strong{position:absolute;inset:0;display:grid;place-items:center;font-size:32px;letter-spacing:5px;pointer-events:none;opacity:.2}.cues{display:flex;gap:8px;overflow:auto;padding:8px 3px}.section input[type=color]{height:48px;padding:2px;width:75px}.primary{background:#4669e8!important;color:white!important}.status{min-height:24px;font-size:13px;line-height:1.5;margin:16px 0}.led:active{transform:translate(-50%,-50%)}a{color:inherit}h1{font-size:25px;letter-spacing:-1px}.section button{min-height:42px}.small{margin:10px 0}
-</style><main class="editor"><a id="back" href="/settings">← Retour</a><h1>Animation personnalisée</h1><p class="small">Sélectionnez des LED, choisissez une couleur, puis ajoutez vos étapes.</p><div class="board" id="board"><strong>ON AIR</strong></div><div class="bar" id="groups"></div><section class="section"><div class="bar"><input aria-label="Couleur des LED sélectionnées" id="color" type="color" value="#ff0000"><div class="bar" id="palette"></div></div><p class="small" id="selection"></p><div class="cues" id="cues"></div><div class="bar"><button id="add">+ Étape</button><button id="duplicate">Dupliquer</button><button id="remove">Supprimer</button><button id="earlier" aria-label="Déplacer avant">←</button><button id="later" aria-label="Déplacer après">→</button></div><div class="grid2"><div><label for="hold">Maintien (secondes)</label><input id="hold" type="number" min="0.1" max="60" step="0.1" value="1"></div><div><label for="transition">Transition vers cette étape</label><select id="transition"><option value="cut">Directe</option><option value="fade">Fondu</option></select></div><div><label for="fade">Fondu (secondes)</label><input id="fade" type="number" min="0.1" max="20" step="0.1" value="1" disabled></div></div><p class="small">12 étapes maximum. La séquence boucle ; le premier fondu commence au noir. La luminosité reste celle de l’émission.</p><div class="bar"><button id="play">Lire l’aperçu</button><button id="save" class="primary">Enregistrer</button><button id="test">Tester sur le boîtier</button><button id="off">OFF</button></div><p class="status" id="status" role="status" aria-live="polite"></p><div class="bar"><button id="export">Exporter</button><button id="import">Importer</button><input id="file" type="file" accept=".onair" hidden></div><p class="small">Après enregistrement, choisissez « Animation personnalisée » dans les réglages DIRECT de l’émission. Exportez ici vos séquences pour les sauvegarder séparément des réglages du boîtier.</p></section></main><script>
+</style><main class="editor"><a id="back" href="/settings">← Retour</a><h1>Animation personnalisée</h1><p class="small">Sélectionnez des LED, choisissez une couleur, puis ajoutez vos étapes.</p><div class="board" id="board"><strong>ON AIR</strong></div><div class="bar" id="groups"></div><section class="section"><div class="bar"><input aria-label="Couleur des LED sélectionnées" id="color" type="color" value="#ff0000"><div class="bar" id="palette"></div></div><p class="small" id="selection"></p><div class="cues" id="cues"></div><div class="bar"><button id="add">+ Étape</button><button id="duplicate">Dupliquer</button><button id="remove">Supprimer</button><button id="earlier" aria-label="Déplacer avant">←</button><button id="later" aria-label="Déplacer après">→</button></div><div class="grid2"><div><label for="hold">Maintien (secondes)</label><input id="hold" type="number" min="0.1" max="60" step="0.1" value="1"></div><div><label for="transition">Transition vers cette étape</label><select id="transition"><option value="cut">Directe</option><option value="fade">Fondu</option></select></div><div><label for="fade">Fondu (secondes)</label><input id="fade" type="number" min="0.1" max="20" step="0.1" value="1" disabled></div></div><p class="small">12 étapes maximum. La séquence boucle ; le premier fondu commence au noir. La luminosité reste celle de l’émission.</p><div class="bar"><button id="play">Lire l’aperçu</button><button id="save" class="primary">Enregistrer</button><button id="test">Tester sur le boîtier</button><button id="off">OFF</button></div><p class="status" id="status" role="status" aria-live="polite"></p><div class="bar"><button id="export">Exporter</button><button id="import">Importer</button><input id="file" type="file" accept=".onair" hidden></div><p class="small">Après enregistrement, choisissez « Animation personnalisée » dans les réglages DIRECT ou ALERTE correspondants de l’émission. Les deux séquences sont indépendantes. Exportez ici vos séquences pour les sauvegarder séparément des réglages du boîtier.</p></section></main><script>
 'use strict';
-const $=id=>document.getElementById(id),i=Number(new URLSearchParams(location.search).get('i'))||0;
+const $=id=>document.getElementById(id),query=new URLSearchParams(location.search),i=Number(query.get('i'))||0,isAlert=query.get('kind')==='alert',suffix='&kind='+(isAlert?'alert':'direct');
+if(isAlert)document.querySelector('h1').textContent='Animation d’alerte';
 $('back').href='/macro?i='+i;
 let cues=[{hold:1000,fade:0,rgb:Array(108).fill(0)}],current=0,selected=new Set(Array.from({length:36},(_,n)=>n)),dirty=false,playing=false,started=0;
 const buttons=[];const cue=()=>cues[current];
@@ -5042,15 +5063,15 @@ function checksum(a){let h=2166136261;for(let n=0;n<1352;n++)h=Math.imul(h^a[n],
 function encode(){const a=new Uint8Array(1356),v=new DataView(a.buffer);a.set([67,85,69,49,1,cues.length,0,0]);cues.forEach((c,n)=>{const o=8+n*112;v.setUint16(o,c.hold,true);v.setUint16(o+2,c.fade,true);a.set(c.rgb,o+4);});v.setUint32(1352,checksum(a),true);return a;}
 function decode(a){if(a.length!==1356)throw Error('Taille du fichier invalide');const v=new DataView(a.buffer,a.byteOffset,a.byteLength);if(String.fromCharCode(...a.slice(0,4))!=='CUE1'||a[4]!==1||a[5]<1||a[5]>12||a[6]||a[7]||v.getUint32(1352,true)!==checksum(a))throw Error('Fichier invalide ou endommagé');const result=[];for(let n=0;n<a[5];n++){const o=8+n*112,hold=v.getUint16(o,true),fade=v.getUint16(o+2,true);if(hold<100||hold>60000||fade>20000)throw Error('Durée invalide');result.push({hold,fade,rgb:Array.from(a.slice(o+4,o+112))});}return result;}
 async function request(url,options={}){const r=await fetch(url,{...options,signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error(await r.text()||'Connexion impossible');return r;}
-async function save(){const bytes=encode(),snapshot=Array.from(bytes).map(n=>n.toString(16).padStart(2,'0')).join('');await request('/api/custom/save?i='+i,{method:'POST',body:new URLSearchParams({data:snapshot})});if(snapshot===Array.from(encode()).map(n=>n.toString(16).padStart(2,'0')).join(''))dirty=false;$('status').textContent=dirty?'Enregistré ; de nouvelles modifications restent à enregistrer':'Animation enregistrée';}
+async function save(){const bytes=encode(),snapshot=Array.from(bytes).map(n=>n.toString(16).padStart(2,'0')).join('');await request('/api/custom/save?i='+i+suffix,{method:'POST',body:new URLSearchParams({data:snapshot})});if(snapshot===Array.from(encode()).map(n=>n.toString(16).padStart(2,'0')).join(''))dirty=false;$('status').textContent=dirty?'Enregistré ; de nouvelles modifications restent à enregistrer':'Animation enregistrée';}
 function action(fn){return async()=>{try{await fn();}catch(e){$('status').textContent=e.message;}};}
 $('save').onclick=action(save);
-$('test').onclick=action(async()=>{await save();const r=await request('/api/custom/test?i='+i,{method:'POST'});$('status').textContent=await r.text();});
+$('test').onclick=action(async()=>{await save();const r=await request('/api/custom/test?i='+i+suffix,{method:'POST'});$('status').textContent=await r.text();});
 $('off').onclick=action(async()=>{await request('/api/off');$('status').textContent='Éteint';});
-$('export').onclick=()=>{const url=URL.createObjectURL(new Blob([encode()],{type:'application/octet-stream'})),a=document.createElement('a');a.href=url;a.download='ON_AIR_animation_'+(i+1)+'.onair';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);};
+$('export').onclick=()=>{const url=URL.createObjectURL(new Blob([encode()],{type:'application/octet-stream'})),a=document.createElement('a');a.href=url;a.download='ON_AIR_'+(isAlert?'alerte_':'direct_')+(i+1)+'.onair';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);};
 $('import').onclick=()=>$('file').click();$('file').onchange=action(async()=>{const f=$('file').files[0];if(!f)return;const parsed=decode(new Uint8Array(await f.arrayBuffer()));cues=parsed;current=0;mark();refresh();});
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
-refresh();(async()=>{try{const r=await request('/api/custom?i='+i);if(r.status!==204){const loaded=decode(new Uint8Array(await r.arrayBuffer()));if(!dirty){cues=loaded;current=0;refresh();}}}catch(e){$('status').textContent=e.message;}})();
+refresh();(async()=>{try{const r=await request('/api/custom?i='+i+suffix);if(r.status!==204){const loaded=decode(new Uint8Array(await r.arrayBuffer()));if(!dirty){cues=loaded;current=0;refresh();}}}catch(e){$('status').textContent=e.message;}})();
 </script></html>)EDITOR";
 void sendAnimationPage(){
   uint8_t i;if(!parseMacroIndex(i)){server.send(400,"text/plain","Émission invalide");return;}
@@ -5059,6 +5080,7 @@ void sendAnimationPage(){
 
 void handleCustomGet(){
   uint8_t i;if(!parseMacroIndex(i)){server.send(400,"text/plain","Émission invalide");return;}
+  i+=server.arg("kind")=="alert"?MACRO_COUNT:0;
   char path[24];snprintf(path,sizeof(path),"/custom%u.bin",i);
   File f=LittleFS.open(path,"r");
   if(!f){server.send(204,"text/plain","");return;}
@@ -5066,6 +5088,7 @@ void handleCustomGet(){
 }
 void handleCustomSave(){
   uint8_t i;if(!parseMacroIndex(i)){server.send(400,"text/plain","Émission invalide");return;}
+  i+=server.arg("kind")=="alert"?MACRO_COUNT:0;
   String hex=server.arg("data");
   if(hex.length()!=2712){server.send(400,"text/plain","Taille invalide");return;}
   uint8_t data[1356];
@@ -5084,11 +5107,47 @@ void handleCustomSave(){
 void handleCustomTest(){
   uint8_t i;if(!parseMacroIndex(i)){server.send(400,"text/plain","Émission invalide");return;}
   if(outputEnabled||alertRunning){server.send(409,"text/plain","Arrêtez le direct avant le test");return;}
-  if(!loadCustom(i)){server.send(400,"text/plain","Enregistrez une animation");return;}
+  bool alert=server.arg("kind")=="alert";
+  if(!loadCustom(i+(alert?MACRO_COUNT:0))){server.send(400,"text/plain","Enregistrez une animation");return;}
   // Preview uses the normal bounded preview scheduler, without changing saved settings.
   showMacroPreview(i,true);previewMotionMacro=i;previewMotionDirect=true;
-  customPreview=true;renderCustomOutput(i,0);settingsPreviewUntil=millis()+15000UL;
+  customPreview=true;customPreviewAlert=alert;renderCustomOutput(i,0,alert);settingsPreviewUntil=millis()+15000UL;
   server.send(200,"text/plain","Test : 15 secondes maximum");
+}
+
+// Updater onEnd also fires during begin/reset: only a completed HTTP upload
+// with no updater error is eligible for the success signal.
+static bool otaVisualActive=false;
+static unsigned long otaVisualLastFrame=0,otaErrorUntil=0;
+void otaVisualStart(){
+  blackout();otaVisualActive=true;otaErrorUntil=0;otaVisualLastFrame=0;
+  setRGBLevel(255,170,0,28);
+}
+void otaVisualProgress(size_t received,size_t total){
+  if(!otaVisualActive)return;
+  unsigned long now=millis();if(now-otaVisualLastFrame<40UL)return;
+  otaVisualLastFrame=now;
+  uint8_t level=20+(uint8_t)(18*(.5f-.5f*cosf(now/1000.0f*6.2831853f)));
+  setRGBLevel(255,170,0,level);
+}
+void otaVisualError(uint8_t error){
+  blackout();otaVisualActive=false;otaErrorUntil=millis()+2500UL;setRGBLevel(255,25,0,35);
+}
+void otaVisualEnd(){
+  if(!otaVisualActive)return;
+  if(server.upload().status!=UPLOAD_FILE_END||Update.hasError()){
+    if(server.upload().status==UPLOAD_FILE_ABORTED)otaVisualError(0);
+    return;
+  }
+  otaVisualActive=false;
+  // Bounded confirmation after flash validation, before the library restarts.
+  for(uint8_t n=0;n<2;n++){
+    setRGBLevel(30,255,80,40);delay(220);ledsOff();delay(80);
+  }
+  setRGBLevel(30,255,80,35);
+}
+void updateOTAVisual(){
+  if(otaErrorUntil&&(long)(millis()-otaErrorUntil)>=0){otaErrorUntil=0;ledsOff();}
 }
 
 void setupWebServer() {
@@ -5187,6 +5246,10 @@ void setupWebServer() {
   server.onNotFound(redirectCaptivePortal);
 
   server.on("/firmware", HTTP_GET, sendFirmwarePage);
+  Update.onStart(otaVisualStart);
+  Update.onProgress(otaVisualProgress);
+  Update.onError(otaVisualError);
+  Update.onEnd(otaVisualEnd);
   httpUpdater.setup(&server, "/update");
 
   // DNS wildcard necessaire au popup de portail captif iOS.
@@ -5497,7 +5560,6 @@ void setup() {
 
   // Etat initial propre, puis indicateur de progression sans ralentir le boot.
   blackout();
-  if(config.startupAnimation)startupAnimation();
 
   // Le Wi-Fi apparait immediatement au demarrage.
   startAccessPoint();
@@ -5520,6 +5582,8 @@ void setup() {
     Serial.println("[READY] Wi-Fi memorises : " + String(config.knownWiFiCount));
     Serial.println("[READY] Acces stable via routeur : http://onair-moc.local");
   }
+  // Start the cinematic clock only after blocking hardware/network setup.
+  if(config.startupAnimation)startupAnimation();
 }
 
 void loop() {
@@ -5529,6 +5593,7 @@ void loop() {
   // Le serveur HTTP est toujours prioritaire.
   server.handleClient();
 
+  updateOTAVisual();
   updateAlert();
   updateSettingsPreview();
   updateDirectMotion();

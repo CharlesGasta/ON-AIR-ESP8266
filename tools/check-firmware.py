@@ -27,3 +27,10 @@ for text in (previous,current):
     assert 'if(mode==6)motionRainbow(x*.8f-p,frame[i],peak);' in text
 assert previous.split('bool renderBootFrame(')[1].split('// END PORTABLE MOTION ENGINE')[0] == current.split('bool renderBootFrame(')[1].split('// END PORTABLE MOTION ENGINE')[0]
 print('PASS: approved boot cinematic and horizontal rainbow unchanged')
+
+setup=current.split('void setup() {')[1].split('void loop() {')[0]
+assert setup.index('startupAnimation();')>setup.index('startAccessPoint();')
+assert setup.index('startupAnimation();')>setup.index('setupWebServer();')
+assert setup.index('startupAnimation();')>setup.index('startExternalWiFi();')
+assert "case ALERT_CUSTOM:" in current and 'renderCustomOutput(alertMacro,elapsed,true)' in current
+print('PASS: cold boot starts cinematic after network setup; custom alert renders its own sequence')

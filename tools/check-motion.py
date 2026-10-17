@@ -40,7 +40,8 @@ prefix=r'''
 using std::size_t;
 '''
 stubs=r'''
-static uint8_t customData[1356];static int customOwner=-1;static bool customValid=false,customPreview=false;
+static uint8_t customData[1356];static int customOwner=-1;static bool customValid=false,customPreview=false,customPreviewAlert=false;
+bool otaVisualActive=false;unsigned long otaVisualLastFrame=0,otaErrorUntil=0;
 uint32_t clockMs=0;uint32_t millis(){return clockMs;}
 int activeMacro=-1,alertMacro=-1;
 bool outputEnabled=false,alertRunning=false,settingsPreviewActive=false,alertTestMode=false;
@@ -84,9 +85,11 @@ struct {
  void send(int,const char*,const char*){exported.clear();}
  WiFiClient client(){return WiFiClient();}
 } server;
+struct {bool error=false;bool hasError(){return error;}} Update;
+void delay(unsigned long ms){clockMs+=ms;}
 int configWrites=0;void saveConfig(){configWrites++;}
 '''
-functions='\n'.join(function(n) for n in ['configChecksum','resetMotionSettings','validMotionSettings','saveMotionSettings','loadMotionSettings','showMotionFrame','renderSpatialMotion','cancelStartupIndicator','setStartupIndicatorState','enterStartupState','updateStartupIndicatorNetworkState','finishStartupSequence','updateStartupIndicator','customWord','validCustom','loadCustom','renderCustomOutput','renderMacroDirect','updateDirectMotion','startupAnimation','blackout','handleConfigExport','handleConfigImportData'])
+functions='\n'.join(function(n) for n in ['configChecksum','resetMotionSettings','validMotionSettings','saveMotionSettings','loadMotionSettings','showMotionFrame','renderSpatialMotion','cancelStartupIndicator','setStartupIndicatorState','enterStartupState','updateStartupIndicatorNetworkState','finishStartupSequence','updateStartupIndicator','customWord','validCustom','loadCustom','renderCustomOutput','renderMacroDirect','updateDirectMotion','startupAnimation','blackout','handleConfigExport','handleConfigImportData','otaVisualStart','otaVisualProgress','otaVisualError','otaVisualEnd','updateOTAVisual'])
 tests=r'''
 void applyMacroIdle(uint8_t i){cancelStartupIndicator();activeMacro=i;outputEnabled=false;ledsOff();}
 void tick(uint32_t ms){clockMs=ms;updateStartupIndicatorNetworkState();updateStartupIndicator();}
@@ -141,6 +144,10 @@ int main(){
  config.macro[0].intensity=100;renderCustomOutput(0,0);assert(displayed[0][0]==200&&displayed[0][1]==0);
  renderCustomOutput(0,1500);assert(displayed[0][0]==100&&displayed[0][1]==100);
  renderCustomOutput(0,2200);assert(displayed[0][0]==0&&displayed[0][1]==200);
+ auto directFile=files["/custom0.bin"];
+ auto alertFile=directFile;alertFile[12]=50;uint32_t alertCrc=configChecksum(alertFile.data(),1352);memcpy(alertFile.data()+1352,&alertCrc,4);files["/custom4.bin"]=alertFile;
+ renderCustomOutput(0,0,true);assert(displayed[0][0]==50&&files["/custom0.bin"]==directFile);
+ renderCustomOutput(0,0,false);assert(displayed[0][0]==200);
  customData[20]^=1;assert(!validCustom(customData));customOwner=-1;
  beginBoot(false);tick(4500);assert(startupIndicatorState==STARTUP_IND_AP);tick(5400);assert(startupIndicatorState==STARTUP_IND_FALLBACK);tick(7000);assert(startupSequenceComplete);
  beginBoot(true,3);tick(4500);tick(5400);tick(5425);assert(startupIndicatorState==STARTUP_IND_READY);tick(6475);assert(startupSequenceComplete);
@@ -149,6 +156,17 @@ int main(){
  beginBoot(false);tick(1000);activeMacro=0;outputEnabled=true;updateStartupIndicatorNetworkState();int previous=shown;tick(5000);assert(startupSequenceComplete&&shown==previous);
  beginBoot(false);blackout();previous=shown;tick(5000);updateDirectMotion();assert(shown==previous&&!outputEnabled&&activeMacro==-1);for(auto& p:displayed)for(auto c:p)assert(c==0);
  beginBoot(false);startupTestActive=true;startupRestoreMacro=2;tick(4500);tick(5400);tick(7000);assert(activeMacro==2&&!outputEnabled);
+
+ beginBoot(false);clockMs=8000;startupAnimation();clockMs=8017;updateStartupIndicator();assert(startupIndicatorState==STARTUP_IND_INTRO);
+ clockMs=9700;updateStartupIndicator();assert(startupIndicatorState==STARTUP_IND_INTRO);
+ clockMs=12500;updateStartupIndicator();assert(startupIndicatorState==STARTUP_IND_AP);
+ upload.status=UPLOAD_FILE_START;otaVisualEnd();assert(!otaVisualActive);
+ otaVisualStart();otaVisualEnd();assert(otaVisualActive); // begin/reset callback must not flash green
+ clockMs+=50;otaVisualProgress(200,1000);assert(displayed[0][0]>displayed[0][1]&&displayed[0][1]>0&&displayed[0][2]==0);
+ upload.status=UPLOAD_FILE_ABORTED;otaVisualEnd();assert(!otaVisualActive&&displayed[0][0]>displayed[0][1]);
+ clockMs+=2600;updateOTAVisual();assert(displayed[0][0]==0);
+ otaVisualStart();Update.error=true;upload.status=UPLOAD_FILE_END;otaVisualError(1);otaVisualEnd();assert(displayed[0][0]>displayed[0][1]);Update.error=false;
+ otaVisualStart();upload.status=UPLOAD_FILE_END;unsigned long before=clockMs;otaVisualEnd();assert(!otaVisualActive&&clockMs-before==600&&displayed[0][1]>displayed[0][0]);
  resetMotionSettings();assert(motionSettings.mode[0]==0&&motionSettings.cycleMs[0]==4000);
  assert(saveMotionSettings());motionSettings.mode[1]=2;motionSettings.cycleMs[1]=6000;assert(saveMotionSettings());
  resetMotionSettings();loadMotionSettings();assert(motionSettings.mode[1]==2&&motionSettings.cycleMs[1]==6000);
