@@ -2,6 +2,14 @@
 
 Contrôleur **ON AIR RGB autonome** basé sur ESP8266 / NodeMCU 1.0 (ESP-12E), avec interface Web mobile.
 
+## V3.4.1 — OTA silencieuse et vérifiée
+
+La mise à jour n’anime plus le ruban : extinction avant l’écriture, suspension des effets pendant le transfert. Le serveur contrôle la taille exacte et l’empreinte MD5, répond au navigateur après validation, puis redémarre 1,8 seconde plus tard.
+
+La page attend le nouveau démarrage et vérifie le contenu installé. Une réponse réseau perdue déclenche cette vérification, jamais un nouvel envoi automatique. Si le résultat reste inconnu, utiliser Vérifier le boîtier après reconnexion avant de relancer l’envoi. Le nouveau fonctionnement est actif après installation de cette version ; le transfert initial depuis une version précédente est encore géré par son ancien firmware.
+
+Détails : [notes v3.4.1](docs/releases/v3.4.1.md).
+
 ## V3.4.0 — Une bibliothèque commune d’animations
 
 Un seul accès **Réglages → Éditeur d’animation**. Donner un nom puis Enregistrer crée une animation disponible par son nom dans les menus Direct et Alerte des quatre émissions. Jusqu’à 16 séquences communes, chacune de 12 étapes. Charger une ligne permet de la modifier ; Nouvelle crée une autre séquence ; la croix rouge supprime la séquence et ses affectations. Les noms vides ou déjà utilisés par une autre séquence sont refusés.

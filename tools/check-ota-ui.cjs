@@ -5,7 +5,7 @@ const fs=require('fs'),path=require('path'),assert=require('assert'),crypto=requ
  await context.route('http://onair.test/**',async route=>{
   const u=new URL(route.request().url());
   if(u.pathname==='/api/firmware/status'){
-   polls++;return route.fulfill({json:{boot,version:'3.4.1 OTA 36LED 100PCT',state:'idle',session:lastSession,verified_md5:u.searchParams.has('verify_size')?digest:''}});
+   if(u.searchParams.has('verify_size'))assert.equal(+u.searchParams.get('flash_mode'),firmware[2]);polls++;return route.fulfill({json:{boot,version:'3.4.1 OTA 36LED 100PCT',state:'idle',session:lastSession,verified_md5:u.searchParams.has('verify_size')?digest:''}});
   }
   if(u.pathname==='/update'){
    posts++;expected=u.searchParams.get('md5');lastSession=u.searchParams.get('session');

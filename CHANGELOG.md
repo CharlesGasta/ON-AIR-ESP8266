@@ -1,5 +1,13 @@
 # Changelog
 
+## V3.4.1 — Fiabilité OTA
+
+- suppression des animations et callbacks LED pendant la mise à jour
+- contrôle de taille, format .bin et MD5 ; réponse avant redémarrage différé
+- vérification du nouveau démarrage et du firmware installé après reconnexion
+- réponse perdue distincte d’un échec ; aucun renvoi automatique
+- tests des handlers réels avec flash simulée et des scénarios navigateur perte de réponse / refus / résultat inconnu
+
 ## V3.4.0 — Bibliothèque commune
 
 - éditeur unique et 16 séquences nommées réutilisables en Direct/Alerte dans les quatre émissions
