@@ -34,7 +34,7 @@
 #include <Updater.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.4.3 PREVIEW 36LED 100PCT"
+#define FIRMWARE_VERSION "3.5.0 STUDIO 36LED 100PCT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -2168,36 +2168,9 @@ void renderLogoDraw(uint8_t r,
                     uint8_t intensity,
                     unsigned long elapsed,
                     unsigned long cycleMs) {
-  // Dessine progressivement le contour complet, garde un court plateau,
-  // puis recommence. Le ruban physique suit le contour du logo.
-  cycleMs = max(700UL, cycleMs);
-
-  unsigned long pos = elapsed % cycleMs;
-  float p = (float)pos / (float)cycleMs;
-
-  pixels.clear();
-
-  uint16_t litCount = 0;
-
-  if (p < 0.78f) {
-    litCount = 1U + (uint16_t)((p / 0.78f) * (LED_COUNT - 1U));
-  } else {
-    litCount = LED_COUNT;
-  }
-
-  if (litCount > LED_COUNT) litCount = LED_COUNT;
-
-  for (uint16_t i = 0; i < litCount; i++) {
-    setPixelLevel(i, r, g, b, intensity);
-  }
-
-  // Le dernier point est plus lumineux pour visualiser la progression.
-  if (litCount > 0 && litCount < LED_COUNT) {
-    setPixelLevel(litCount - 1, r, g, b, min(100, (int)intensity + 25));
-  }
-
-  pixels.show();
-  updateLedStatusReference(r,g,b,intensity);
+  uint8_t frame[36][3];
+  renderContourFrame(r,g,b,intensity,elapsed,max(700UL,cycleMs),frame);
+  showMotionFrame(frame);updateLedStatusReference(r,g,b,intensity);
 }
 
 
@@ -2247,12 +2220,12 @@ void renderMotionFrame(uint8_t mode, uint8_t r, uint8_t g, uint8_t b,
     float x=logoX(i),level=1;
     if(mode==1)level=.15f+.85f*(.5f-.5f*cosf(p*6.28318530718f));
     else if(mode==2||mode==3||mode==5){
-      float pos=mode==5?(.5f-.5f*cosf(p*6.28318530718f)):p;
+      float pos=(mode==5||isolateSurfaces)?(.5f-.5f*cosf(p*6.28318530718f)):p;
       if(mode==3)pos=1-pos;
       float d=fabsf(x-pos);
       level=.08f+.92f*motionSmooth(1-d/.30f);
     }else if(mode==8||mode==9){
-      float pos=mode==8?p:1-p;
+      float pos=.5f-.5f*cosf(p*6.28318530718f);if(mode==9)pos=1-pos;
       level=.08f+.92f*motionSmooth(1-fabsf(logoY(i)-pos)/.30f);
     }else if(mode==4){
       float d=fmodf(p*36-i+36,36);level=d<7?1-d/7:.04f;
@@ -2289,21 +2262,47 @@ bool renderBootFrame(uint32_t elapsed,uint8_t frame[][3]) {
   return true;
 }
 bool isLibraryId(int id){return id>=32&&id<48;}
+void renderContourFrame(uint8_t r,uint8_t g,uint8_t b,uint8_t intensity,uint32_t elapsed,uint32_t cycle,uint8_t frame[][3]){
+  float phase=(elapsed%cycle)*72.0f/cycle;
+  for(uint8_t i=0;i<36;i++){
+    float level=phase<36?motionClamp(phase-i):1-motionClamp(phase-36-i);
+    motionRGB(frame[i],r,g,b,level*(intensity>100?100:intensity)/100.0f);
+  }
+}
+uint16_t cueField(const uint8_t* c){return c[2]|((uint16_t)c[3]<<8);}
+uint32_t cueDuration(const uint8_t* c){uint16_t f=cueField(c);return (c[0]|((uint16_t)c[1]<<8))+((f&0x8000)?0:f);}
+uint32_t cueFrameInterval(const uint8_t* data){
+  for(uint8_t n=0;n<data[5];n++){uint16_t f=cueField(data+8+n*112);if((f&0x8000)&&(f&0x3fff)<66)return 10;}
+  return 33;
+}
+void renderCuePixels(const uint8_t* c,uint32_t t,uint8_t frame[][3]){
+  uint16_t f=cueField(c);const uint8_t* rgb=c+4;
+  if(!(f&0x8000)){memcpy(frame,rgb,108);return;}
+  memset(frame,0,108);uint16_t speed=f&0x3fff;if(speed<20)speed=20;
+  if(f&0x4000){
+    if((t/speed)%2==0)for(uint8_t led=0;led<36;led++)if(rgb[3+led/8]&(1<<(led%8)))memcpy(frame[led],rgb,3);
+  }else{
+    int start=rgb[0],end=rgb[1],distance=start>end?start-end:end-start;
+    int led=start+(start>end?-1:1)*((t/speed)%(distance+1));
+    if(led>=0&&led<36)memcpy(frame[led],rgb+2,3);
+  }
+}
 void renderCueFrame(const uint8_t* data,uint8_t intensity,uint32_t elapsed,uint8_t frame[][3]){
-  uint32_t total=0;
-  for(uint8_t n=0;n<data[5];n++){const uint8_t* c=data+8+n*112;total+=(c[0]|((uint16_t)c[1]<<8))+(c[2]|((uint16_t)c[3]<<8));}
-  if(!total){memset(frame,0,108);return;}
-  uint32_t t=elapsed%total;
+  uint32_t total=0;for(uint8_t n=0;n<data[5];n++)total+=cueDuration(data+8+n*112);
+  if(!total){memset(frame,0,108);return;}uint32_t t=elapsed%total;
+  float peak=(intensity>100?100:intensity)/100.0f*(data[4]==2?data[6]/100.0f:1.0f);
   for(uint8_t n=0;n<data[5];n++){
-    const uint8_t* c=data+8+n*112;uint16_t fade=c[2]|((uint16_t)c[3]<<8);
-    uint32_t duration=(c[0]|((uint16_t)c[1]<<8))+fade;
+    const uint8_t* c=data+8+n*112;uint32_t duration=cueDuration(c);
     if(t>=duration){t-=duration;continue;}
-    const uint8_t* previous=data+8+(n?n-1:data[5]-1)*112;
-    float mix=fade?motionClamp(t/(float)fade):1;
-    for(uint8_t led=0;led<36;led++)for(uint8_t k=0;k<3;k++){
-      uint8_t a=(!n&&elapsed<total)?0:previous[4+led*3+k];
-      frame[led][k]=(uint8_t)((a+(c[4+led*3+k]-a)*mix)*(intensity>100?100:intensity)/100.0f);
+    uint16_t fade=cueField(c);renderCuePixels(c,t,frame);
+    if(!(fade&0x8000)&&fade){
+      const uint8_t* previous=data+8+(n?n-1:data[5]-1)*112;uint8_t before[36][3];
+      renderCuePixels(previous,cueDuration(previous)-1,before);float mix=motionClamp(t/(float)fade);
+      for(uint8_t led=0;led<36;led++)for(uint8_t k=0;k<3;k++){
+        uint8_t a=(!n&&elapsed<total)?0:before[led][k];frame[led][k]=(uint8_t)(a+(frame[led][k]-a)*mix);
+      }
     }
+    for(uint8_t led=0;led<36;led++)for(uint8_t k=0;k<3;k++)frame[led][k]=(uint8_t)(frame[led][k]*peak);
     return;
   }
 }
@@ -2393,12 +2392,18 @@ static char libraryPreviewToken[41]={},libraryPreviewRevokedToken[41]={};
 
 uint16_t customWord(const uint8_t* p){return p[0]|((uint16_t)p[1]<<8);}
 bool validCustom(const uint8_t* p){
-  if(memcmp(p,"CUE1",4)||p[4]!=1||p[5]<1||p[5]>12||p[6]||p[7])return false;
+  if(memcmp(p,"CUE1",4)||(p[4]!=1&&p[4]!=2)||p[5]<1||p[5]>12)return false;
+  if(p[4]==1?(p[6]||p[7]):(p[6]>100||p[7]!=0xA5))return false;
   uint32_t stored=0;memcpy(&stored,p+1352,4);
   if(configChecksum(p,1352)!=stored)return false;
   for(uint8_t n=0;n<p[5];n++){
     const uint8_t* c=p+8+n*112;
-    if(customWord(c)<100||customWord(c)>60000||customWord(c+2)>20000)return false;
+    uint16_t effect=customWord(c+2);
+    if(customWord(c)<100||customWord(c)>60000)return false;
+    if(effect&0x8000){
+      if(p[4]!=2||(effect&0x3fff)<20||(effect&0x3fff)>10000)return false;
+      if(!(effect&0x4000)&&(c[4]>35||c[5]>35))return false;
+    }else if(effect>20000)return false;
   }
   return true;
 }
@@ -2612,7 +2617,7 @@ void updateAlert() {
   }
 
   if(isLibraryId(m.alertAnimation)){
-    if(now-alertAnimLastFrameAt<33UL)return;alertAnimLastFrameAt=now;
+    if(now-alertAnimLastFrameAt<cueFrameInterval(customData))return;alertAnimLastFrameAt=now;
     renderLibraryOutput(alertMacro,m.alertAnimation,elapsed);alertVisible=true;return;
   }
 
@@ -2734,7 +2739,7 @@ void updateAlert() {
     }
 
     case ALERT_CUSTOM: {
-      if(now-alertAnimLastFrameAt<33UL)return;
+      if(now-alertAnimLastFrameAt<cueFrameInterval(customData))return;
       alertAnimLastFrameAt=now;renderCustomOutput(alertMacro,elapsed,true);
       alertVisible=true;break;
     }
@@ -2745,7 +2750,7 @@ void updateAlert() {
     case ALERT_SWEEP_TB:
     case ALERT_SWEEP_BT:
     case ALERT_RAINBOW: {
-      if(now-alertAnimLastFrameAt<33UL)return;
+      if(now-alertAnimLastFrameAt<cueFrameInterval(customData))return;
       alertAnimLastFrameAt=now;
       uint8_t mode=m.alertAnimation==ALERT_SWEEP_TB?8:m.alertAnimation==ALERT_SWEEP_BT?9:m.alertAnimation==ALERT_SWEEP_LR?2:m.alertAnimation==ALERT_SWEEP_RL?3:m.alertAnimation==ALERT_BREATHE?1:m.alertAnimation==ALERT_IRIS?7:6;
       renderSpatialMotion(mode,m.r,m.g,m.b,m.intensity,elapsed,max(1000UL,(unsigned long)m.blinkMs*4UL),true);
@@ -2799,7 +2804,7 @@ void updateDirectMotion() {
   if(alertRunning||!startupSequenceComplete)return;
   int i=settingsPreviewActive&&previewMotionDirect?previewMotionMacro:outputEnabled&&!settingsPreviewActive?activeMacro:-1;
   if(i<0||i>=MACRO_COUNT||(motionSettings.mode[i]==0&&!(settingsPreviewActive&&customPreview)))return;
-  unsigned long now=millis();if(now-liveMotionLastFrameAt<33UL)return;
+  unsigned long now=millis();if(now-liveMotionLastFrameAt<(isLibraryId(motionSettings.mode[i])?cueFrameInterval(customData):33UL))return;
   liveMotionLastFrameAt=now;
   renderMacroDirect(i);
 }
@@ -3726,14 +3731,11 @@ void sendMacroSettingsPage(uint8_t i) {
   c += F("</div><label for='directMotion'>Animation en direct</label><select id='directMotion' onchange=\"updateMotionControls();preview('direct');saveNow()\">");
   c += F("<option value='0'");if(motionSettings.mode[i]==0)c += F(" selected");c += F(">Fixe</option>");
   c += F("<option value='1'");if(motionSettings.mode[i]==1)c += F(" selected");c += F(">Respiration</option>");
-  c += F("<option value='2'");if(motionSettings.mode[i]==2)c += F(" selected");c += F(">Balayage gauche → droite</option>");
-  c += F("<option value='3'");if(motionSettings.mode[i]==3)c += F(" selected");c += F(">Balayage droite → gauche</option>");
+  c += F("<option value='2'");if((motionSettings.mode[i]==2||motionSettings.mode[i]==3||motionSettings.mode[i]==5))c += F(" selected");c += F(">Balayage gauche ↔ droite</option>");
   c += F("<option value='4'");if(motionSettings.mode[i]==4)c += F(" selected");c += F(">Comète autour du logo</option>");
-  c += F("<option value='5'");if(motionSettings.mode[i]==5)c += F(" selected");c += F(">Balayage aller-retour</option>");
   c += F("<option value='6'");if(motionSettings.mode[i]==6)c += F(" selected");c += F(">Arc-en-ciel</option>");
   c += F("<option value='7'");if(motionSettings.mode[i]==7)c += F(" selected");c += F(">Ouverture depuis le centre</option>");
-  c += F("<option value='8'");if(motionSettings.mode[i]==8)c += F(" selected");c += F(">Balayage haut → bas</option>");
-  c += F("<option value='9'");if(motionSettings.mode[i]==9)c += F(" selected");c += F(">Balayage bas → haut</option>");
+  c += F("<option value='8'");if((motionSettings.mode[i]==8||motionSettings.mode[i]==9))c += F(" selected");c += F(">Balayage haut ↔ bas</option>");
   if(motionSettings.mode[i]==10)c += F("<option value='10' selected>Ancienne séquence DIRECT</option>");
   c += libraryOptions(motionSettings.mode[i]);
   c += F("</select><label for='motionCycle'>Durée d’un cycle</label><select id='motionCycle' onchange=\"preview('direct');saveNow()\">");
@@ -3803,13 +3805,11 @@ void sendMacroSettingsPage(uint8_t i) {
   c += F("<option value='6'");
   if (m.alertAnimation == ALERT_LOGO_DRAW) c += F(" selected");
   c += F(">Logo : dessin progressif du contour</option>");
-  c += F("<option value='7'");if(m.alertAnimation==7)c += F(" selected");c += F(">Balayage gauche → droite</option>");
-  c += F("<option value='8'");if(m.alertAnimation==8)c += F(" selected");c += F(">Balayage droite → gauche</option>");
+  c += F("<option value='7'");if((m.alertAnimation==7||m.alertAnimation==8))c += F(" selected");c += F(">Balayage gauche ↔ droite</option>");
   c += F("<option value='9'");if(m.alertAnimation==9)c += F(" selected");c += F(">Respiration</option>");
   c += F("<option value='10'");if(m.alertAnimation==10)c += F(" selected");c += F(">Ouverture depuis le centre</option>");
   c += F("<option value='11'");if(m.alertAnimation==11)c += F(" selected");c += F(">Arc-en-ciel horizontal</option>");
-  c += F("<option value='12'");if(m.alertAnimation==ALERT_SWEEP_TB)c += F(" selected");c += F(">Balayage haut → bas</option>");
-  c += F("<option value='13'");if(m.alertAnimation==ALERT_SWEEP_BT)c += F(" selected");c += F(">Balayage bas → haut</option>");
+  c += F("<option value='12'");if((m.alertAnimation==ALERT_SWEEP_TB||m.alertAnimation==ALERT_SWEEP_BT))c += F(" selected");c += F(">Balayage haut ↔ bas</option>");
   if(m.alertAnimation==ALERT_CUSTOM)c += F("<option value='14' selected>Ancienne séquence ALERTE</option>");
   c += libraryOptions(m.alertAnimation);
   c += F("</select>");
@@ -5260,11 +5260,14 @@ void updateLibraryPreview(){
   if(!libraryPreviewActive)return;
   if(!settingsPreviewActive||customOwner!=-2){strncpy(libraryPreviewRevokedToken,libraryPreviewToken,40);libraryPreviewActive=false;libraryPreviewToken[0]=0;customOwner=-1;return;}
   if((long)(millis()-settingsPreviewUntil)>=0){stopLibraryPreview();return;}
-  if(millis()-libraryPreviewLastFrame<33UL)return;
+  if(millis()-libraryPreviewLastFrame<cueFrameInterval(customData))return;
   libraryPreviewLastFrame=millis();
   uint8_t frame[36][3];
   if(libraryPreviewPlaying)renderCueFrame(customData,100,millis()-libraryPreviewStarted,frame);
-  else memcpy(frame,customData+12+libraryPreviewCue*112,108);
+  else{
+    renderCuePixels(customData+8+libraryPreviewCue*112,0,frame);
+    if(customData[4]==2)for(uint8_t i=0;i<36;i++)for(uint8_t k=0;k<3;k++)frame[i][k]=frame[i][k]*customData[6]/100;
+  }
   showMotionFrame(frame);
 }
 void handleLibraryPreview(){
@@ -5296,7 +5299,8 @@ static const char ANIMATION_EDITOR_HTML[] PROGMEM = R"EDITOR(<!doctype html><htm
 body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.editor{max-width:680px;margin:auto;padding:22px 20px 50px}.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.editor .bar button,.editor .cues button{background:var(--panel);color:var(--text);border:1px solid var(--line)}.editor .cues button.selected{background:#4669e8;color:white}.board{position:relative;margin:30px 17px;width:calc(100% - 34px);height:210px;border-radius:28px;background:var(--panel);box-shadow:inset 0 0 35px #00000010}.led{position:absolute;width:25px;height:25px;min-height:0;padding:0;border-radius:50%;transform:translate(-50%,-50%);border:2px solid #777;box-shadow:0 0 8px var(--led)}.led[aria-pressed=true]{outline:3px solid #6489ff;outline-offset:3px}.board strong{position:absolute;inset:0;display:grid;place-items:center;font-size:32px;letter-spacing:5px;pointer-events:none;opacity:.2}.cues{display:flex;gap:8px;overflow:auto;padding:8px 3px}.section input[type=color]{height:48px;padding:2px;width:75px}.primary{background:#4669e8!important;color:white!important}.status{min-height:24px;font-size:13px;line-height:1.5;margin:16px 0}.led:active{transform:translate(-50%,-50%)}a{color:inherit}h1{font-size:25px;letter-spacing:-1px}.section button{min-height:42px}.small{margin:10px 0}
 
 .editor-meta label{margin-top:0}.editor-meta #animationName{margin-bottom:18px}.editor-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}.preview-switch{display:flex!important;align-items:center;gap:10px;margin:0!important;font-size:13px!important;line-height:1.3;cursor:pointer}.preview-switch input{appearance:none;-webkit-appearance:none;position:relative;width:44px!important;min-width:44px;min-height:26px!important;height:26px!important;border:0!important;border-radius:20px!important;background:#c3c7d3!important;cursor:pointer}.preview-switch input:checked{background:#4669e8!important}.preview-switch input:before{content:'';position:absolute;width:20px;height:20px;border-radius:50%;background:white;left:3px;top:3px;transition:transform .15s}.preview-switch input:checked:before{transform:translateX(18px)}.editor .status{margin:12px 0 0;min-height:18px}.playbar{display:flex;justify-content:center;margin:14px 0 20px}.playbar button{background:var(--panel);color:var(--text);border:1px solid var(--line);padding:10px 20px}.library-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.library-heading h2{font-size:20px;margin:0}.library-heading h2 span{font-size:12px;color:var(--muted);font-weight:400}.library-heading button{background:transparent;color:var(--text);padding:7px 10px;font-size:13px}.library-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}.library-row:last-child{border:0}.library-select{flex:1;min-width:0;justify-content:flex-start;text-align:left;background:transparent;color:var(--text);padding:8px 0;font-size:14px}.library-select span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.library-select:before{content:'○';color:var(--muted);font-size:21px}.library-select[aria-pressed=true]:before{content:'✓';color:#6489ff}.library-delete{width:40px;min-width:40px;min-height:40px!important;padding:0;border-radius:12px;background:#ff525215;color:#e65b64;font-size:24px}.library-empty{font-size:13px;color:var(--muted);padding:16px 0}.editor-meta .primary{white-space:nowrap;padding:10px 16px}.editor .editor-meta input[type=text]{font-size:16px}.editor-meta .preview-switch span{max-width:130px}@media(max-width:350px){.editor-toolbar{align-items:stretch;flex-direction:column}.editor-meta .preview-switch span{max-width:none}.editor-meta .preview-switch{justify-content:space-between;padding:6px 0}}
-</style><main class="editor"><a id="back" href="/settings">← Retour</a><h1>Éditeur d’animation</h1><section class="section editor-meta"><label for="animationName">Nom de l’animation</label><input id="animationName" type="text" maxlength="32" placeholder="Ex. Alerte studio" autocomplete="off"><div class="editor-toolbar"><label class="preview-switch"><input id="physicalPreview" type="checkbox" role="switch"><span>Aperçu sur le boîtier</span></label><button id="save" class="primary">Enregistrer</button></div><p class="status" id="status" role="status" aria-live="polite"></p></section><div class="board" id="board"><strong>ON AIR</strong></div><div class="bar" id="groups"></div><div class="playbar"><button id="play">Lire la séquence</button></div><section class="section"><div class="bar"><input aria-label="Couleur des LED sélectionnées" id="color" type="color" value="#ff0000"><div class="bar" id="palette"></div></div><p class="small" id="selection"></p><div class="cues" id="cues"></div><div class="bar"><button id="add">+ Étape</button><button id="duplicate">Dupliquer</button><button id="remove">Supprimer</button><button id="earlier" aria-label="Déplacer avant">←</button><button id="later" aria-label="Déplacer après">→</button></div><div class="grid2"><div><label for="hold">Maintien (secondes)</label><input id="hold" type="number" min="0.1" max="60" step="0.1" value="1"></div><div><label for="transition">Transition vers cette étape</label><select id="transition"><option value="cut">Directe</option><option value="fade">Fondu</option></select></div><div><label for="fade">Fondu (secondes)</label><input id="fade" type="number" min="0.1" max="20" step="0.1" value="1" disabled></div></div><p class="small">12 étapes maximum · Maintien et fondu par étape.</p><div class="bar"><button id="export">Exporter</button><button id="import">Importer</button><input id="file" type="file" accept=".onair" hidden></div></section><section class="section"><div class="library-heading"><h2>Mes animations <span id="libraryCount"></span></h2><button id="newAnimation">+ Nouvelle</button></div><div id="libraryList"></div><p class="small">Disponibles dans les menus Direct et Alerte de toutes les émissions.</p></section></main><script>
+.board{height:auto;aspect-ratio:3.3;margin:38px 16px;width:calc(100% - 32px);background:#101114;border:1px solid #30323b;border-radius:20px;isolation:isolate}.board #diffuser{position:absolute;left:5%;top:12%;width:90%;height:76%;pointer-events:none;z-index:0}.board .led,.board .led:active,.board .led:hover{width:28px;height:28px;min-height:28px;padding:0;border:0;background:transparent!important;border-radius:50%;transform:none!important;translate:-50% -50%;transition:none;z-index:3;box-shadow:none;touch-action:manipulation}.board .led:after{content:'';position:absolute;inset:6px;border-radius:50%;background:var(--led);border:1px solid #aab0c2;box-shadow:0 0 7px var(--led);pointer-events:none}.board .led[aria-pressed=true]{outline:none}.board .led[aria-pressed=true]:after{outline:2px solid #7599ff;outline-offset:2px}.board .led:focus-visible{outline:2px solid white;outline-offset:0}#palette{gap:8px;flex:1}#palette button{width:30px;min-height:30px;padding:0}#intensityValue{float:right;font-variant-numeric:tabular-nums}#bank{width:min(560px,calc(100% - 28px));max-height:80vh;overflow:auto;padding:22px;border:1px solid var(--line);border-radius:24px;background:var(--panel);color:var(--text)}#bank::backdrop{background:#0008;backdrop-filter:blur(5px)}#bank h3{font-size:14px;color:var(--muted);margin:20px 0 8px}.bank-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}.bank-row>span{min-width:0;overflow-wrap:anywhere}.bank-row button{font-size:12px;min-height:36px;padding:8px 12px;background:var(--bg);color:var(--text);white-space:nowrap}.library-copy{font-size:12px;background:transparent;color:var(--muted);padding:8px;min-height:36px}.editor [hidden]{display:none!important}
+</style><main class="editor"><a id="back" href="/settings">← Retour</a><h1>Éditeur d’animation</h1><section class="section editor-meta"><label for="animationName">Nom de l’animation</label><input id="animationName" type="text" maxlength="32" placeholder="Ex. Alerte studio" autocomplete="off"><div class="editor-toolbar"><label class="preview-switch"><input id="physicalPreview" type="checkbox" role="switch"><span>Aperçu sur le boîtier</span></label><button id="save" class="primary">Enregistrer</button></div><p class="status" id="status" role="status" aria-live="polite"></p></section><div class="board" id="board"><canvas id="diffuser" aria-label="Simulation lumineuse ON AIR"></canvas></div><div class="bar" id="groups"></div><div class="playbar"><button id="play">Lire la séquence</button></div><section class="section"><div class="bar"><input aria-label="Couleur des LED sélectionnées" id="color" type="color" value="#ff0000"><div class="bar" id="palette"></div></div><label for="animationIntensity">Intensité de la séquence <output id="intensityValue">100 %</output></label><input id="animationIntensity" type="range" min="0" max="100" value="100"><p class="small" id="selection"></p><div class="grid2"><div><label for="cueKind">Outil de cette étape</label><select id="cueKind"><option value="pixels">Couleurs LED</option><option value="chase">Chenillard</option><option value="strobe">Flash / strobe</option></select></div><div id="speedGroup" hidden><label for="effectSpeed">Intervalle (ms)</label><input id="effectSpeed" type="number" min="20" max="10000" step="10" value="100"></div><div id="startGroup" hidden><label for="chaseStart">LED de départ</label><input id="chaseStart" type="number" min="1" max="36" value="1"></div><div id="endGroup" hidden><label for="chaseEnd">LED d’arrivée</label><input id="chaseEnd" type="number" min="1" max="36" value="36"></div></div><button id="applyMask" hidden>Appliquer aux LED sélectionnées</button><div class="cues" id="cues"></div><div class="bar"><button id="add">+ Étape</button><button id="duplicate">Dupliquer</button><button id="remove">Supprimer</button><button id="earlier" aria-label="Déplacer avant">←</button><button id="later" aria-label="Déplacer après">→</button></div><div class="grid2"><div><label for="hold">Maintien (secondes)</label><input id="hold" type="number" min="0.1" max="60" step="0.1" value="1"></div><div><label for="transition">Transition vers cette étape</label><select id="transition"><option value="cut">Directe</option><option value="fade">Fondu</option></select></div><div><label for="fade">Fondu (secondes)</label><input id="fade" type="number" min="0.1" max="20" step="0.1" value="1" disabled></div></div><p class="small">12 étapes maximum · Maintien et fondu par étape.</p><div class="bar"><button id="bankOpen">Banque</button><button id="export">Exporter</button><button id="import">Importer</button><input id="file" type="file" accept=".onair" hidden></div></section><section class="section"><div class="library-heading"><h2>Mes animations <span id="libraryCount"></span></h2><button id="newAnimation">+ Nouvelle</button></div><div id="libraryList"></div><p class="small">Disponibles dans les menus Direct et Alerte de toutes les émissions.</p></section></main><dialog id="bank"><div class="library-heading"><h2>Banque d’animations</h2><button id="bankClose" aria-label="Fermer la banque">×</button></div><h3>Modèles</h3><div id="templateList"></div><h3>Mes animations</h3><div id="bankSaved"></div></dialog><script>
 'use strict';
 const $=id=>document.getElementById(id),makeToken=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
 let token=makeToken(),previewVersion=0,previewReady=false,previewBusy=false,previewPending=false,previewMisses=0;
@@ -5304,14 +5308,27 @@ $('back').href='/settings#animations';
 let library=[],editingId=null,saving=false,loading=false,previewTimer=0,previewQueue=Promise.resolve(),previewFailed=false;
 let cues=[{hold:1000,fade:0,rgb:Array(108).fill(0)}],current=0,selected=new Set(Array.from({length:36},(_,n)=>n)),dirty=false,playing=false,started=0;
 const buttons=[];const cue=()=>cues[current];
+const logoPath=new Path2D('M190 130A90 90 0 1 0 10 130A90 90 0 1 0 190 130Z M220 220V40H267L335 147V40H380V220H333L265 113V220Z M470 220L530 40H585L650 220H600L587 180H524L511 220Z M537 140H575L555 80Z M678 220L705 40H755L728 220Z M775 220L802 40H877Q944 40 944 100Q944 143 907 157L945 220H885L853 164H834L825 220Z M842 83L836 123H869Q892 123 892 101Q892 83 871 83Z');
+const lightCanvas=document.createElement('canvas');lightCanvas.width=96;lightCanvas.height=26;const lightContext=lightCanvas.getContext('2d'),lightImage=lightContext.createImageData(96,26),weights=new Float32Array(96*26*36);
+for(let y=0;y<26;y++)for(let x=0;x<96;x++)for(let n=0;n<36;n++){const lx=n<12?(11-n)/11:n<17?0:n<31?(n-17)/13:1,ly=n<12?1:n<17?(17-n)/6:n<31?0:(n-30)/6;weights[(y*96+x)*36+n]=Math.exp(-((x/95-lx)**2/.042+(y/25-ly)**2/.7))*.78;}
+function drawDiffuser(rgb,level){
+ const d=lightImage.data;for(let px=0;px<96*26;px++){let r=0,g=0,b=0;for(let n=0;n<36;n++){const w=weights[px*36+n]*level;r+=rgb[n*3]*w;g+=rgb[n*3+1]*w;b+=rgb[n*3+2]*w;}d[px*4]=Math.min(255,18+r);d[px*4+1]=Math.min(255,18+g);d[px*4+2]=Math.min(255,20+b);d[px*4+3]=255;}
+ lightContext.putImageData(lightImage,0,0);const c=$('diffuser'),ctx=c.getContext('2d');if(c.width!==960){c.width=960;c.height=260;}ctx.clearRect(0,0,960,260);ctx.save();ctx.clip(logoPath,'evenodd');ctx.imageSmoothingEnabled=true;ctx.drawImage(lightCanvas,0,0,960,260);ctx.restore();
+}
+function cuePixels(c,t){
+ if(!c.kind||c.kind==='pixels')return c.rgb.slice();const rgb=Array(108).fill(0),speed=c.speed||100;
+ if(c.kind==='chase'){const a=c.start??0,b=c.end??35,n=a+Math.sign(b-a)*(Math.floor(t/speed)%(Math.abs(b-a)+1));rgb.splice(n*3,3,...c.color);}
+ else if(Math.floor(t/speed)%2===0)for(const n of c.mask||[])rgb.splice(n*3,3,...c.color);
+ return rgb;
+}
 function mark(){dirty=true;$('status').textContent='Modifications non enregistrées';queuePreview();}
-function draw(rgb=cue().rgb){buttons.forEach((b,n)=>{const c='rgb('+rgb.slice(n*3,n*3+3).join(',')+')';b.style.background=c;b.style.setProperty('--led',c);b.setAttribute('aria-pressed',selected.has(n));});$('selection').textContent=selected.size+' LED sélectionnée'+(selected.size>1?'s':'');}
+function draw(rgb=cuePixels(cue(),0)){const level=(cues.intensity??100)/100;buttons.forEach((b,n)=>{const c='rgb('+rgb.slice(n*3,n*3+3).map(v=>Math.round(v*level)).join(',')+')';b.style.setProperty('--led',c);b.setAttribute('aria-pressed',selected.has(n));});drawDiffuser(rgb,level);$('selection').textContent=selected.size+' LED sélectionnée'+(selected.size>1?'s':'');}
 for(let n=0;n<36;n++){const x=n<12?(11-n)/11:n<17?0:n<31?(n-17)/13:1,y=n<12?1:n<17?(17-n)/6:n<31?0:(n-30)/6;const b=document.createElement('button');b.className='led';b.style.left=(x*100)+'%';b.style.top=(y*100)+'%';b.title='LED '+(n+1);b.setAttribute('aria-label','LED '+(n+1));b.onclick=()=>{stop();selected.has(n)?selected.delete(n):selected.add(n);draw();};$('board').append(b);buttons.push(b);}
 for(const [name,fn] of [['Tout',n=>true],['Aucune',n=>false],['Haut',n=>n>=17&&n<31],['Bas',n=>n<12],['Gauche',n=>n>=12&&n<17],['Droite',n=>n>=31]]){const b=document.createElement('button');b.textContent=name;b.onclick=()=>{selected=new Set(buttons.map((_,n)=>n).filter(fn));draw();};$('groups').append(b);}
-function paint(hex){stop();const rgb=[1,3,5].map(n=>parseInt(hex.slice(n,n+2),16));selected.forEach(n=>cue().rgb.splice(n*3,3,...rgb));mark();draw();}
-for(const [name,c] of [['Rouge','#ff0000'],['Cyan','#00d7d7'],['Violet','#a52ab6'],['Ambre','#ffb42b'],['Blanc','#ffffff'],['Noir','#000000']]){const b=document.createElement('button');b.setAttribute('aria-label',name);b.style.cssText='background:'+c+';width:32px;min-height:32px;padding:0;border:1px solid #888';b.onclick=()=>{$('color').value=c;paint(c);};$('palette').append(b);}
+function paint(hex){stop();const rgb=[1,3,5].map(n=>parseInt(hex.slice(n,n+2),16));if(cue().kind&&cue().kind!=='pixels')cue().color=rgb;else selected.forEach(n=>cue().rgb.splice(n*3,3,...rgb));mark();draw();}
+for(const [name,c] of [['Rouge','#ff0000'],['Orange','#ff8000'],['Jaune','#ffff00'],['Vert','#00ff00'],['Menthe','#00ff80'],['Cyan','#00ffff'],['Azur','#0080ff'],['Bleu','#0000ff'],['Violet','#8000ff'],['Magenta','#ff00ff'],['Rose','#ff0080'],['Blanc','#ffffff'],['Noir','#000000']]){const b=document.createElement('button');b.setAttribute('aria-label',name);b.title=name;b.style.cssText='background:'+c+';border:1px solid #888';b.onclick=()=>{$('color').value=c;paint(c);};$('palette').append(b);}
 $('color').oninput=e=>paint(e.target.value);
-function refresh(){stop();$('cues').replaceChildren();cues.forEach((c,n)=>{const b=document.createElement('button');b.textContent=String(n+1).padStart(2,'0');b.className=n===current?'selected':'';b.setAttribute('aria-pressed',n===current);b.onclick=()=>{current=n;refresh();};$('cues').append(b);});$('hold').value=cue().hold/1000;$('transition').value=cue().fade?'fade':'cut';$('fade').disabled=!cue().fade;if(cue().fade)$('fade').value=cue().fade/1000;$('add').disabled=$('duplicate').disabled=cues.length>=12;$('remove').disabled=cues.length===1;$('earlier').disabled=!current;$('later').disabled=current===cues.length-1;draw();queuePreview();}
+function refresh(){stop();$('cues').replaceChildren();cues.forEach((c,n)=>{const b=document.createElement('button');b.textContent=String(n+1).padStart(2,'0');b.className=n===current?'selected':'';b.setAttribute('aria-pressed',n===current);b.onclick=()=>{current=n;refresh();};$('cues').append(b);});$('hold').value=cue().hold/1000;$('transition').value=cue().fade?'fade':'cut';$('fade').disabled=!cue().fade;if(cue().fade)$('fade').value=cue().fade/1000;$('add').disabled=$('duplicate').disabled=cues.length>=12;$('remove').disabled=cues.length===1;$('earlier').disabled=!current;$('later').disabled=current===cues.length-1;syncEffectControls();draw();queuePreview();}
 $('hold').onchange=()=>{cue().hold=Math.round(Math.max(.1,Math.min(60,Number($('hold').value)||1))*1000);mark();refresh();};
 function timing(){cue().fade=$('transition').value==='fade'?Math.round(Math.max(.1,Math.min(20,Number($('fade').value)||1))*1000):0;mark();refresh();}
 $('fade').onchange=$('transition').onchange=timing;
@@ -5320,13 +5337,13 @@ $('duplicate').onclick=()=>{if(cues.length>=12)return;const copy=JSON.parse(JSON
 $('remove').onclick=()=>{if(cues.length===1)return;cues.splice(current,1);current=Math.min(current,cues.length-1);mark();refresh();};
 function move(d){const next=current+d;if(next<0||next>=cues.length)return;[cues[current],cues[next]]=[cues[next],cues[current]];current=next;mark();refresh();}
 $('earlier').onclick=()=>move(-1);$('later').onclick=()=>move(1);
-function frame(elapsed){const total=cues.reduce((a,c)=>a+c.hold+c.fade,0);let t=elapsed%total;for(let n=0;n<cues.length;n++){const c=cues[n];if(t>=c.hold+c.fade){t-=c.hold+c.fade;continue;}const prev=cues[(n+cues.length-1)%cues.length],mix=c.fade?Math.min(1,t/c.fade):1;return c.rgb.map((b,k)=>{const a=n===0&&elapsed<total?0:prev.rgb[k];return Math.floor(a+(b-a)*mix);});}}
+function frame(elapsed){const duration=c=>c.hold+((c.kind&&c.kind!=='pixels')?0:c.fade),total=cues.reduce((a,c)=>a+duration(c),0);let t=elapsed%total;for(let n=0;n<cues.length;n++){const c=cues[n];if(t>=duration(c)){t-=duration(c);continue;}if(c.kind&&c.kind!=='pixels')return cuePixels(c,t);const prev=cues[(n+cues.length-1)%cues.length],before=cuePixels(prev,duration(prev)-1),mix=c.fade?Math.min(1,t/c.fade):1;return c.rgb.map((b,k)=>{const a=n===0&&elapsed<total?0:before[k];return Math.floor(a+(b-a)*mix);});}}
 function stop(){playing=false;$('play').textContent='Lire la séquence';queuePreview();}
 function tick(now){if(!playing)return;draw(frame(now-started));requestAnimationFrame(tick);}
 $('play').onclick=()=>{if(playing){stop();draw();}else{playing=true;started=performance.now();$('play').textContent='Pause';requestAnimationFrame(tick);queuePreview();}};
 function checksum(a){let h=2166136261;for(let n=0;n<1352;n++)h=Math.imul(h^a[n],16777619)>>>0;return h;}
-function encode(){const a=new Uint8Array(1356),v=new DataView(a.buffer);a.set([67,85,69,49,1,cues.length,0,0]);cues.forEach((c,n)=>{const o=8+n*112;v.setUint16(o,c.hold,true);v.setUint16(o+2,c.fade,true);a.set(c.rgb,o+4);});v.setUint32(1352,checksum(a),true);return a;}
-function decode(a){if(a.length!==1356)throw Error('Taille du fichier invalide');const v=new DataView(a.buffer,a.byteOffset,a.byteLength);if(String.fromCharCode(...a.slice(0,4))!=='CUE1'||a[4]!==1||a[5]<1||a[5]>12||a[6]||a[7]||v.getUint32(1352,true)!==checksum(a))throw Error('Fichier invalide ou endommagé');const result=[];for(let n=0;n<a[5];n++){const o=8+n*112,hold=v.getUint16(o,true),fade=v.getUint16(o+2,true);if(hold<100||hold>60000||fade>20000)throw Error('Durée invalide');result.push({hold,fade,rgb:Array.from(a.slice(o+4,o+112))});}return result;}
+function encode(){const a=new Uint8Array(1356),v=new DataView(a.buffer);a.set([67,85,69,49,2,cues.length,cues.intensity??100,165]);cues.forEach((c,n)=>{const o=8+n*112;v.setUint16(o,c.hold,true);if(!c.kind||c.kind==='pixels'){v.setUint16(o+2,c.fade,true);a.set(c.rgb,o+4);}else{v.setUint16(o+2,0x8000|(c.kind==='strobe'?0x4000:0)|(c.speed||100),true);if(c.kind==='chase')a.set([c.start??0,c.end??35,...c.color],o+4);else{a.set(c.color,o+4);for(const led of c.mask||[])a[o+7+Math.floor(led/8)]|=1<<(led%8);}}});v.setUint32(1352,checksum(a),true);return a;}
+function decode(a){if(a.length!==1356)throw Error('Taille du fichier invalide');const v=new DataView(a.buffer,a.byteOffset,a.byteLength),version=a[4];if(String.fromCharCode(...a.slice(0,4))!=='CUE1'||![1,2].includes(version)||a[5]<1||a[5]>12||(version===1?(a[6]||a[7]):(a[6]>100||a[7]!==165))||v.getUint32(1352,true)!==checksum(a))throw Error('Fichier invalide ou endommagé');const result=[];result.intensity=version===2?a[6]:100;for(let n=0;n<a[5];n++){const o=8+n*112,hold=v.getUint16(o,true),f=v.getUint16(o+2,true),rgb=Array.from(a.slice(o+4,o+112));if(hold<100||hold>60000)throw Error('Durée invalide');if(f&0x8000){const speed=f&0x3fff;if(version!==2||speed<20||speed>10000)throw Error('Vitesse invalide');if(f&0x4000)result.push({hold,fade:0,kind:'strobe',color:rgb.slice(0,3),speed,mask:Array.from({length:36},(_,i)=>i).filter(i=>rgb[3+Math.floor(i/8)]&(1<<(i%8))),rgb:Array(108).fill(0)});else{if(rgb[0]>35||rgb[1]>35)throw Error('LED invalide');result.push({hold,fade:0,kind:'chase',start:rgb[0],end:rgb[1],color:rgb.slice(2,5),speed,rgb:Array(108).fill(0)});}}else{if(f>20000)throw Error('Durée invalide');result.push({hold,fade:f,rgb});}}return result;}
 async function request(url,options={}){const r=await fetch(url,{...options,signal:options.signal||AbortSignal.timeout(8000)});if(!r.ok){const e=Error(await r.text()||'Connexion impossible');e.status=r.status;throw e;}return r;}
 
 function hexData(){return Array.from(encode()).map(n=>n.toString(16).padStart(2,'0')).join('');}
@@ -5413,6 +5430,25 @@ setInterval(()=>{
 },1000);
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&$('physicalPreview').checked){stop();stopPhysicalPreview().catch(previewError);}});
 window.addEventListener('pagehide',()=>{navigator.sendBeacon('/api/library/preview/stop',new URLSearchParams({token}));});
+function syncEffectControls(){
+ const c=cue(),kind=c.kind||'pixels';$('cueKind').value=kind;$('speedGroup').hidden=kind==='pixels';$('startGroup').hidden=$('endGroup').hidden=kind!=='chase';$('applyMask').hidden=kind!=='strobe';$('effectSpeed').value=c.speed||100;$('chaseStart').value=(c.start??0)+1;$('chaseEnd').value=(c.end??35)+1;$('transition').disabled=kind!=='pixels';$('fade').disabled=kind!=='pixels'||!c.fade;$('animationIntensity').value=cues.intensity??100;$('intensityValue').value=(cues.intensity??100)+' %';
+}
+$('animationIntensity').oninput=()=>{cues.intensity=Number($('animationIntensity').value);$('intensityValue').value=cues.intensity+' %';mark();draw();};
+$('cueKind').onchange=()=>{stop();const c=cue(),kind=$('cueKind').value;if(kind==='pixels'){c.rgb=cuePixels(c,0);c.kind='pixels';c.fade=0;}else{c.kind=kind;c.color=[1,3,5].map(n=>parseInt($('color').value.slice(n,n+2),16));c.start=0;c.end=35;c.speed=100;c.mask=Array.from(selected);c.fade=0;if(kind==='chase')c.hold=3600;}mark();refresh();};
+function setEffect(){const c=cue();c.speed=Math.round(Math.max(20,Math.min(10000,Number($('effectSpeed').value)||100)));c.start=Math.round(Math.max(1,Math.min(36,Number($('chaseStart').value)||1)))-1;c.end=Math.round(Math.max(1,Math.min(36,Number($('chaseEnd').value)||36)))-1;if(c.kind==='chase'){const count=Math.abs(c.end-c.start)+1;c.speed=Math.min(c.speed,Math.floor(60000/count));c.hold=Math.max(100,count*c.speed);}mark();refresh();}
+$('effectSpeed').onchange=$('chaseStart').onchange=$('chaseEnd').onchange=setEffect;$('applyMask').onclick=()=>{cue().mask=Array.from(selected);mark();draw();};
+function solidCue(rgb,hold=1000,fade=0){return {hold,fade,rgb:Array.from({length:36},()=>rgb).flat()};}
+const templates=[
+ ['Rouge · Bleu · Vert',()=>[[255,0,0],[0,0,255],[0,255,0]].map(c=>solidCue(c,1000,400))],
+ ['Respiration',()=>[solidCue([255,0,0],100,1800),solidCue([12,0,0],100,1800)]],
+ ['Arc-en-ciel horizontal',()=>Array.from({length:6},(_,phase)=>({hold:250,fade:200,rgb:Array.from({length:36},(_,n)=>{const x=n<12?(11-n)/11:n<17?0:n<31?(n-17)/13:1,h=((x*.8-phase/6)%1+1)%1,f=h*6,k=Math.floor(f),v=Math.round((f-k)*255);return [[255,v,0],[255-v,255,0],[0,255,v],[0,255-v,255],[v,0,255],[255,0,255-v]][k];}).flat()}))],
+ ['Chenillard',()=>[{...solidCue([0,0,0],4000),kind:'chase',start:0,end:35,speed:100,color:[0,255,0]}]],
+ ['Flash / strobe',()=>[{...solidCue([0,0,0],3000),kind:'strobe',speed:100,color:[255,255,255],mask:Array.from({length:36},(_,n)=>n)}]]
+];
+function replaceTimeline(data,name,id=null){if(dirty&&!confirm('Abandonner les modifications non enregistrées ?'))return;stop();cues=data;current=0;editingId=id;$('animationName').value=name;dirty=id===null;refresh();paintLibrary();$('bank').close();$('status').textContent=id===null?'Nouvelle animation à enregistrer':'';}
+async function recallAnimation(item,copy=false){const data=decode(new Uint8Array(await (await request('/api/library/get?id='+item.id)).arrayBuffer()));replaceTimeline(data,copy?item.name+' copie':item.name,copy?null:item.id);}
+function bankRow(name,actions){const row=document.createElement('div');row.className='bank-row';const label=document.createElement('span');label.textContent=name;row.append(label);for(const [title,fn] of actions){const button=document.createElement('button');button.textContent=title;button.onclick=action(fn);row.append(button);}return row;}
+$('bankOpen').onclick=action(async()=>{await refreshLibrary();$('templateList').replaceChildren();$('bankSaved').replaceChildren();for(const [name,make] of templates)$('templateList').append(bankRow(name,[['Utiliser',()=>replaceTimeline(make(),name)]]));for(const item of library)$('bankSaved').append(bankRow(item.name,[['Modifier',()=>recallAnimation(item)],['Copier',()=>recallAnimation(item,true)]]));if(!library.length)$('bankSaved').textContent='Aucune animation enregistrée';$('bank').showModal();});$('bankClose').onclick=()=>$('bank').close();
 $('animationName').oninput=mark;$('save').onclick=action(save);
 $('export').onclick=()=>{const url=URL.createObjectURL(new Blob([encode()],{type:'application/octet-stream'})),a=document.createElement('a');a.href=url;a.download=(normalizedName($('animationName').value)||'ON_AIR_animation')+'.onair';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);};
 $('import').onclick=()=>$('file').click();$('file').onchange=action(async()=>{const f=$('file').files[0];if(!f)return;const parsed=decode(new Uint8Array(await f.arrayBuffer()));cues=parsed;current=0;if(!$('animationName').value)$('animationName').value=f.name.replace(/\.onair$/i,'').slice(0,32);mark();refresh();});

@@ -1,5 +1,13 @@
 # Changelog
 
+## V3.5.0 — Atelier d’animations
+
+- contour allumé/éteint progressivement et balayages aller-retour par axe
+- palette étendue, intensité mémorisée, banque de modèles et copies
+- étapes chenillard et strobe, commandes de sélection et logo lumineux agrandi
+- anciennes séquences conservées, extension contrôlée du format à taille constante
+
+
 ## V3.4.3 — Aperçu et accès éditeur
 
 - accès éditeur sobre, sans barre bleue ni phrase descriptive

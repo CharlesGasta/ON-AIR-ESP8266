@@ -122,6 +122,23 @@ int main(){
  for(int i=17;i<31;i++){assert(logoY(i)==0);if(i>17)assert(logoX(i)>logoX(i-1));}
  for(int i=31;i<36;i++){assert(logoX(i)==1);if(i>31)assert(logoY(i)>logoY(i-1));}
  uint8_t frame[36][3];
+ renderContourFrame(255,0,0,100,0,7200,frame);for(auto& p:frame)assert(p[0]==0);
+ renderContourFrame(255,0,0,100,1800,7200,frame);assert(frame[0][0]==255&&frame[17][0]==255&&frame[18][0]==0);
+ renderContourFrame(255,0,0,100,3600,7200,frame);for(auto& p:frame)assert(p[0]==255);
+ renderContourFrame(255,0,0,100,5400,7200,frame);assert(frame[0][0]==0&&frame[17][0]==0&&frame[18][0]==255);
+ renderContourFrame(255,0,0,100,7199,7200,frame);for(auto& p:frame)assert(p[0]<=3);
+ uint8_t extended[1356]={};memcpy(extended,"CUE1",4);extended[4]=2;extended[5]=1;extended[6]=50;extended[7]=0xA5;
+ extended[8]=0x10;extended[9]=0x0e;extended[10]=100;extended[11]=0x80;extended[12]=35;extended[13]=0;extended[14]=255;
+ uint32_t extendedCrc=configChecksum(extended,1352);memcpy(extended+1352,&extendedCrc,4);assert(validCustom(extended));
+ renderCueFrame(extended,100,0,frame);assert(frame[35][0]==127&&frame[0][0]==0);
+ renderCueFrame(extended,100,3500,frame);assert(frame[0][0]==127&&frame[35][0]==0);
+ extended[10]=20;extended[11]=0xC0;memset(extended+12,0,108);extended[13]=255;extended[15]=1;extended[19]=8;
+ extendedCrc=configChecksum(extended,1352);memcpy(extended+1352,&extendedCrc,4);assert(validCustom(extended));
+ renderCueFrame(extended,100,0,frame);assert(frame[0][1]==127&&frame[35][1]==127&&frame[1][1]==0);
+ renderCueFrame(extended,100,20,frame);for(auto& p:frame)for(auto c:p)assert(c==0);
+ extended[10]=19;extendedCrc=configChecksum(extended,1352);memcpy(extended+1352,&extendedCrc,4);assert(!validCustom(extended));
+ extended[10]=20;extended[4]=1;extended[6]=extended[7]=0;extendedCrc=configChecksum(extended,1352);memcpy(extended+1352,&extendedCrc,4);assert(!validCustom(extended));
+ for(int mode: {2,3,5,8,9}){uint8_t outward[36][3],back[36][3];renderMotionFrame(mode,255,0,0,100,1000,4000,outward,true);renderMotionFrame(mode,255,0,0,100,3000,4000,back,true);for(int i=0;i<36;i++)for(int k=0;k<3;k++)assert(std::abs((int)outward[i][k]-(int)back[i][k])<=1);}
  for(int mode=0;mode<10;mode++)for(int peak: {0,15,60,100})for(uint32_t ms=0;ms<12000;ms+=33){
   renderMotionFrame(mode,255,130,70,peak,ms,4000,frame);
   for(auto& pixel:frame)for(auto value:pixel)assert(value<=255*peak/100+1);
