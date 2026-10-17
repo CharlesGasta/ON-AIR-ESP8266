@@ -42,6 +42,7 @@ prefix=r'''
 using std::size_t;
 '''
 stubs=r'''
+const unsigned long LIBRARY_PREVIEW_LEASE_MS=15000UL;
 static uint8_t customData[1356];static int customOwner=-1;static bool customValid=false,customPreview=false,customPreviewAlert=false;
 bool libraryPreviewActive=false,libraryPreviewPlaying=false;uint8_t libraryPreviewCue=0;unsigned long libraryPreviewStarted=0,libraryPreviewLastFrame=0,settingsPreviewUntil=0;char libraryPreviewToken[41]={},libraryPreviewRevokedToken[41]={};
 bool otaVisualActive=false;unsigned long otaVisualLastFrame=0,otaErrorUntil=0;
@@ -167,9 +168,9 @@ int main(){
  assert(libraryReadName(36,savedName));auto originalName=files["/anim32.bin"];migrateAnimationLibrary();assert(files["/anim32.bin"]==originalName);
  for(uint8_t channel=0;channel<4;channel++){config.macro[channel].intensity=25*(channel+1);renderLibraryOutput(channel,32,0);assert(displayed[0][0]==50*(channel+1));}
  config.macro[0].intensity=100;
- auto beforePreviewFiles=files;assert(loadCustom(0));customOwner=-2;libraryPreviewActive=true;settingsPreviewActive=true;libraryPreviewCue=0;libraryPreviewPlaying=false;settingsPreviewUntil=clockMs+3000;libraryPreviewLastFrame=clockMs-33;
+ auto beforePreviewFiles=files;assert(loadCustom(0));customOwner=-2;libraryPreviewActive=true;settingsPreviewActive=true;libraryPreviewCue=0;libraryPreviewPlaying=false;settingsPreviewUntil=clockMs+LIBRARY_PREVIEW_LEASE_MS;libraryPreviewLastFrame=clockMs-33;
  updateLibraryPreview();assert(displayed[0][0]==200&&files==beforePreviewFiles);
- clockMs+=3001;updateLibraryPreview();assert(!libraryPreviewActive&&!settingsPreviewActive&&displayed[0][0]==0);
+ clockMs+=3001;updateLibraryPreview();assert(libraryPreviewActive);clockMs+=12000;updateLibraryPreview();assert(!libraryPreviewActive&&!settingsPreviewActive&&displayed[0][0]==0);
  libraryPreviewActive=true;settingsPreviewActive=true;customOwner=-2;blackout();int afterOff=shown;updateLibraryPreview();assert(!libraryPreviewActive&&shown==afterOff);
  customOwner=-1;assert(loadCustom(0));customData[20]^=1;assert(!validCustom(customData));customOwner=-1;
  beginBoot(false);tick(4500);assert(startupIndicatorState==STARTUP_IND_AP);tick(5400);assert(startupIndicatorState==STARTUP_IND_FALLBACK);tick(7000);assert(startupSequenceComplete);

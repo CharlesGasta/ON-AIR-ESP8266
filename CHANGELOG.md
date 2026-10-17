@@ -1,5 +1,13 @@
 # Changelog
 
+## V3.4.3 — Aperçu et accès éditeur
+
+- accès éditeur sobre, sans barre bleue ni phrase descriptive
+- aperçu physique sans accumulation de requêtes ni renouvellement avant confirmation
+- tolérance aux incidents réseau temporaires, délai de sécurité 15 secondes
+- tentatives mDNS espacées après échec et soumises à la mémoire disponible
+
+
 ## V3.4.2 — Mémoire et navigation
 
 - textes HTML transférés en flash, buffers libérés avant transmission des scripts

@@ -34,7 +34,7 @@
 #include <Updater.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.4.2 MEMORY 36LED 100PCT"
+#define FIRMWARE_VERSION "3.4.3 PREVIEW 36LED 100PCT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -2388,6 +2388,7 @@ static bool customPreviewAlert=false;
 static bool libraryPreviewActive=false,libraryPreviewPlaying=false;
 static uint8_t libraryPreviewCue=0;
 static unsigned long libraryPreviewStarted=0,libraryPreviewLastFrame=0;
+const unsigned long LIBRARY_PREVIEW_LEASE_MS=15000UL;
 static char libraryPreviewToken[41]={},libraryPreviewRevokedToken[41]={};
 
 uint16_t customWord(const uint8_t* p){return p[0]|((uint16_t)p[1]<<8);}
@@ -2840,7 +2841,7 @@ button{display:inline-flex;align-items:center;justify-content:center;gap:8px;bor
 
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition:none!important;animation:none!important}}
 
-#animations h2{margin-bottom:6px}.animation-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 0;border-bottom:1px solid var(--line)}.animation-row:last-child{border-bottom:0;padding-bottom:0}.animation-emission{display:flex;align-items:center;gap:12px;min-width:0}.animation-emission>span{font-size:15px;font-weight:550;letter-spacing:-.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.animation-logo{width:38px;height:38px;object-fit:contain;border-radius:10px;flex-shrink:0}.animation-actions{display:flex;gap:8px;flex-shrink:0}.animation-actions a{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:10px 12px;border-radius:14px;font-size:13px;font-weight:550;text-decoration:none;line-height:1.2}.animation-actions a>span{font-size:15px;opacity:.55}.animation-direct{background:#edf0fa;color:#455b94}.animation-alert{background:#fff1da;color:#956317}[data-theme=dark] .animation-direct{background:#282f44;color:#bdccee}[data-theme=dark] .animation-alert{background:#3a3021;color:#efc584}.animation-actions a:active{opacity:.7}.editor-link .save{align-items:center;justify-content:center;text-align:center;padding:12px 16px;line-height:1.4}
+.library-entry{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:78px;color:var(--text);text-decoration:none;font-size:16px;font-weight:550}.library-entry>span:last-child{font-size:24px;font-weight:400;color:var(--muted)}.library-entry:active{opacity:.7}.animation-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 0;border-bottom:1px solid var(--line)}.animation-row:last-child{border-bottom:0;padding-bottom:0}.animation-emission{display:flex;align-items:center;gap:12px;min-width:0}.animation-emission>span{font-size:15px;font-weight:550;letter-spacing:-.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.animation-logo{width:38px;height:38px;object-fit:contain;border-radius:10px;flex-shrink:0}.animation-actions{display:flex;gap:8px;flex-shrink:0}.animation-actions a{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:10px 12px;border-radius:14px;font-size:13px;font-weight:550;text-decoration:none;line-height:1.2}.animation-actions a>span{font-size:15px;opacity:.55}.animation-direct{background:#edf0fa;color:#455b94}.animation-alert{background:#fff1da;color:#956317}[data-theme=dark] .animation-direct{background:#282f44;color:#bdccee}[data-theme=dark] .animation-alert{background:#3a3021;color:#efc584}.animation-actions a:active{opacity:.7}.editor-link .save{align-items:center;justify-content:center;text-align:center;padding:12px 16px;line-height:1.4}
 @media(max-width:380px){.animation-row{gap:10px}.animation-emission{gap:9px}.animation-emission>span{font-size:13px}.animation-logo{width:30px;height:30px}.animation-actions{gap:6px}.animation-actions a{padding:10px 11px;gap:7px;font-size:12px}}
 )CSS";
 
@@ -2975,7 +2976,7 @@ void sendControlPage() {
 
   chunk += F("</title>"
     "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>"
-    "<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=320'>"
+    "<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=343'>"
     "</head><body class='control' data-mode='unknown'>"
     "<header class='top control-top'><div><h1 class='title'>");
   chunk += htmlEscape(config.deviceName);
@@ -3455,7 +3456,7 @@ void sendSettingsPage() {
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>Réglages · ON AIR</title>"
     "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>"
-    "<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=320'>"
+    "<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=343'>"
     "</head><body>"
     "<header class='top'><div class='title'>Réglages</div>"
     "<a class='iconbtn' href='/'>← Console</a></header>"
@@ -3515,7 +3516,7 @@ void sendSettingsPage() {
   }
 
   sendHtmlFlash(PSTR("</section>"));
-  sendHtmlFlash(PSTR("<section id='animations' class='section'><h2>Éditeur d’animation</h2><p>Créez vos séquences et retrouvez-les dans toutes les émissions.</p><a class='save library-entry' href='/animation'>Ouvrir l’éditeur →</a></section>"));
+  sendHtmlFlash(PSTR("<a id='animations' class='section library-entry' href='/animation'><span>Éditeur d’animation</span><span aria-hidden='true'>›</span></a>"));
 
   c = F("<form method='POST' action='/saveGeneral'>"
     "<details id='general' class='section'><summary>Identité du boîtier</summary>"
@@ -3688,7 +3689,7 @@ void sendMacroSettingsPage(uint8_t i) {
   c += String(i + 1);
   c += F("</title>");
   c += F("<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>");
-  c += F("<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=320'></head><body>");
+  c += F("<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=343'></head><body>");
   c += F("<header class='top'><div class='title macro-title'>Émission ");
   c += String(i + 1);
   c += F(" — ");
@@ -4877,7 +4878,7 @@ void sendDiagnosticsPage() {
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>Diagnostic</title>"
     "<style>html,body{margin:0;background:#f3f4f8;color:#191a20}</style>"
-    "<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=320'></head><body>"
+    "<script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=343'></head><body>"
     "<header class='top'><div class='title'>Diagnostic</div>"
     "<a class='iconbtn' href='/settings#system'>← Système</a></header>"
     "<div class='wrap'>"
@@ -4972,7 +4973,7 @@ void sendDiagnosticsPage() {
 static const char FIRMWARE_PAGE[] PROGMEM = R"FWPAGE(
 <!doctype html><html lang='fr'><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Mise à jour · ON AIR</title><script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=320'>
+<title>Mise à jour · ON AIR</title><script>(function(){var m;try{m=localStorage.getItem('onair-theme')}catch(e){}if(m!=='dark'&&m!=='light')m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';window.setTheme=function(v){if(v!=='dark'&&v!=='light')return;document.documentElement.dataset.theme=v;try{localStorage.setItem('onair-theme',v)}catch(e){}document.querySelectorAll('[data-theme-choice]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.themeChoice===v))})};document.documentElement.dataset.theme=m})()</script><link rel='stylesheet' href='/style.css?v=343'>
 </head><body><header class='top'><div class='title'>Mise à jour</div><a class='iconbtn' href='/settings#system'>← Système</a></header>
 <main class='wrap'><div class='settings-intro'><span class='eyebrow'>Maintenance</span><h1>Mise à jour</h1><p>Installez une nouvelle version en quelques instants.</p></div>
 <section class='section'><h2>Installer un firmware</h2><p>Choisissez le fichier ON_AIR_ESP8266_OTA.bin. Vos émissions, logos et connexions sont conservés lors d’une mise à jour compatible.</p>
@@ -5281,11 +5282,11 @@ void handleLibraryPreview(){
   libraryPreviewCue=cue;libraryPreviewPlaying=server.arg("play")=="1";
   unsigned long elapsed=constrain(server.arg("elapsed").toInt(),0,1000000);
   libraryPreviewStarted=millis()-elapsed;libraryPreviewLastFrame=millis()-33UL;
-  settingsPreviewUntil=millis()+3000UL;updateLibraryPreview();server.send_P(200,PSTR("text/plain"),PSTR("Aperçu actif"));
+  settingsPreviewUntil=millis()+LIBRARY_PREVIEW_LEASE_MS;updateLibraryPreview();server.send_P(200,PSTR("text/plain"),PSTR("Aperçu actif"));
 }
 void handleLibraryPreviewPing(){
   if(!libraryPreviewActive||!settingsPreviewActive||customOwner!=-2||server.arg("token")!=libraryPreviewToken){server.send_P(409,PSTR("text/plain"),PSTR("Aperçu interrompu"));return;}
-  settingsPreviewUntil=millis()+3000UL;server.send_P(200,PSTR("text/plain"),PSTR("OK"));
+  settingsPreviewUntil=millis()+LIBRARY_PREVIEW_LEASE_MS;server.send_P(200,PSTR("text/plain"),PSTR("OK"));
 }
 void handleLibraryPreviewStop(){
   if(server.arg("token")==libraryPreviewToken)stopLibraryPreview();server.send_P(200,PSTR("text/plain"),PSTR("OK"));
@@ -5298,7 +5299,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 </style><main class="editor"><a id="back" href="/settings">← Retour</a><h1>Éditeur d’animation</h1><section class="section editor-meta"><label for="animationName">Nom de l’animation</label><input id="animationName" type="text" maxlength="32" placeholder="Ex. Alerte studio" autocomplete="off"><div class="editor-toolbar"><label class="preview-switch"><input id="physicalPreview" type="checkbox" role="switch"><span>Aperçu sur le boîtier</span></label><button id="save" class="primary">Enregistrer</button></div><p class="status" id="status" role="status" aria-live="polite"></p></section><div class="board" id="board"><strong>ON AIR</strong></div><div class="bar" id="groups"></div><div class="playbar"><button id="play">Lire la séquence</button></div><section class="section"><div class="bar"><input aria-label="Couleur des LED sélectionnées" id="color" type="color" value="#ff0000"><div class="bar" id="palette"></div></div><p class="small" id="selection"></p><div class="cues" id="cues"></div><div class="bar"><button id="add">+ Étape</button><button id="duplicate">Dupliquer</button><button id="remove">Supprimer</button><button id="earlier" aria-label="Déplacer avant">←</button><button id="later" aria-label="Déplacer après">→</button></div><div class="grid2"><div><label for="hold">Maintien (secondes)</label><input id="hold" type="number" min="0.1" max="60" step="0.1" value="1"></div><div><label for="transition">Transition vers cette étape</label><select id="transition"><option value="cut">Directe</option><option value="fade">Fondu</option></select></div><div><label for="fade">Fondu (secondes)</label><input id="fade" type="number" min="0.1" max="20" step="0.1" value="1" disabled></div></div><p class="small">12 étapes maximum · Maintien et fondu par étape.</p><div class="bar"><button id="export">Exporter</button><button id="import">Importer</button><input id="file" type="file" accept=".onair" hidden></div></section><section class="section"><div class="library-heading"><h2>Mes animations <span id="libraryCount"></span></h2><button id="newAnimation">+ Nouvelle</button></div><div id="libraryList"></div><p class="small">Disponibles dans les menus Direct et Alerte de toutes les émissions.</p></section></main><script>
 'use strict';
 const $=id=>document.getElementById(id),makeToken=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
-let token=makeToken(),previewVersion=0;
+let token=makeToken(),previewVersion=0,previewReady=false,previewBusy=false,previewPending=false,previewMisses=0;
 $('back').href='/settings#animations';
 let library=[],editingId=null,saving=false,loading=false,previewTimer=0,previewQueue=Promise.resolve(),previewFailed=false;
 let cues=[{hold:1000,fade:0,rgb:Array(108).fill(0)}],current=0,selected=new Set(Array.from({length:36},(_,n)=>n)),dirty=false,playing=false,started=0;
@@ -5326,7 +5327,7 @@ $('play').onclick=()=>{if(playing){stop();draw();}else{playing=true;started=perf
 function checksum(a){let h=2166136261;for(let n=0;n<1352;n++)h=Math.imul(h^a[n],16777619)>>>0;return h;}
 function encode(){const a=new Uint8Array(1356),v=new DataView(a.buffer);a.set([67,85,69,49,1,cues.length,0,0]);cues.forEach((c,n)=>{const o=8+n*112;v.setUint16(o,c.hold,true);v.setUint16(o+2,c.fade,true);a.set(c.rgb,o+4);});v.setUint32(1352,checksum(a),true);return a;}
 function decode(a){if(a.length!==1356)throw Error('Taille du fichier invalide');const v=new DataView(a.buffer,a.byteOffset,a.byteLength);if(String.fromCharCode(...a.slice(0,4))!=='CUE1'||a[4]!==1||a[5]<1||a[5]>12||a[6]||a[7]||v.getUint32(1352,true)!==checksum(a))throw Error('Fichier invalide ou endommagé');const result=[];for(let n=0;n<a[5];n++){const o=8+n*112,hold=v.getUint16(o,true),fade=v.getUint16(o+2,true);if(hold<100||hold>60000||fade>20000)throw Error('Durée invalide');result.push({hold,fade,rgb:Array.from(a.slice(o+4,o+112))});}return result;}
-async function request(url,options={}){const r=await fetch(url,{...options,signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error(await r.text()||'Connexion impossible');return r;}
+async function request(url,options={}){const r=await fetch(url,{...options,signal:options.signal||AbortSignal.timeout(8000)});if(!r.ok){const e=Error(await r.text()||'Connexion impossible');e.status=r.status;throw e;}return r;}
 
 function hexData(){return Array.from(encode()).map(n=>n.toString(16).padStart(2,'0')).join('');}
 function normalizedName(value){return value.trim().normalize('NFC');}
@@ -5367,35 +5368,48 @@ async function deleteAnimation(item){
   if(saving||loading)return;await request('/api/library/delete',{method:'POST',body:new URLSearchParams({id:item.id})});
   if(editingId===item.id)clearEditor();await refreshLibrary();$('status').textContent='Animation supprimée';
 }
-function previewError(e){$('physicalPreview').checked=false;previewFailed=true;clearTimeout(previewTimer);previewTimer=0;$('status').textContent='Aperçu arrêté : '+e.message;}
+function previewError(e){
+  const fatal=e.status&&e.status<500;
+  if(!fatal&&++previewMisses<3){$('status').textContent='Reconnexion de l’aperçu…';queuePreview();return;}
+  $('physicalPreview').checked=false;previewReady=false;previewPending=false;previewFailed=true;clearTimeout(previewTimer);previewTimer=0;$('status').textContent='Aperçu arrêté : '+e.message;
+}
 function queuePreview(){
-  if(!$('physicalPreview').checked){clearTimeout(previewTimer);previewTimer=0;return;}
-  if(previewTimer)return;
-  const version=previewVersion;
-  previewTimer=setTimeout(()=>{
-    previewTimer=0;
-    previewQueue=previewQueue.catch(()=>{}).then(async()=>{
-      if(!$('physicalPreview').checked||version!==previewVersion)return;
-      const body=new URLSearchParams({token,data:hexData(),cue:current,play:playing?'1':'0',elapsed:playing?Math.floor(performance.now()-started):0});
-      try{await request('/api/library/preview',{method:'POST',body});}catch(e){if(version===previewVersion)previewError(e);}
-    });
-  },100);
+  if(!$('physicalPreview').checked)return;
+  previewPending=true;
+  if(previewTimer||previewBusy)return;
+  previewTimer=setTimeout(flushPhysicalPreview,100);
+}
+function flushPhysicalPreview(){
+  previewTimer=0;
+  if(previewBusy||!$('physicalPreview').checked||!previewPending)return;
+  previewPending=false;
+  sendPhysicalPreview(false);
+}
+function sendPhysicalPreview(ping){
+  if(previewBusy||!$('physicalPreview').checked)return;
+  const version=previewVersion,activeToken=token;
+  const body=ping?new URLSearchParams({token:activeToken}):new URLSearchParams({token:activeToken,data:hexData(),cue:current,play:playing?'1':'0',elapsed:playing?Math.floor(performance.now()-started):0});
+  previewBusy=true;
+  previewQueue=(async()=>{
+    try{
+      await request('/api/library/preview'+(ping?'/ping':''),{method:'POST',body,signal:AbortSignal.timeout(4000)});
+      if(version===previewVersion){previewReady=true;previewMisses=0;}
+    }catch(e){if(version===previewVersion)previewError(e);}
+    finally{previewBusy=false;if($('physicalPreview').checked&&previewPending)queuePreview();}
+  })();
 }
 async function stopPhysicalPreview(){
-  const stoppedToken=token;previewVersion++;clearTimeout(previewTimer);previewTimer=0;$('physicalPreview').checked=false;
+  const stoppedToken=token;previewVersion++;previewReady=false;previewPending=false;clearTimeout(previewTimer);previewTimer=0;$('physicalPreview').checked=false;
   await previewQueue.catch(()=>{});await request('/api/library/preview/stop',{method:'POST',body:new URLSearchParams({token:stoppedToken})});
 }
 $('physicalPreview').onchange=action(async()=>{
-  if($('physicalPreview').checked){token=makeToken();previewVersion++;previewFailed=false;queuePreview();$('status').textContent='Aperçu sur le boîtier activé';}
+  if($('physicalPreview').checked){token=makeToken();previewVersion++;previewReady=false;previewMisses=0;previewFailed=false;queuePreview();$('status').textContent='Aperçu sur le boîtier activé';}
   else{await stopPhysicalPreview();$('status').textContent='Aperçu sur le boîtier désactivé';}
 });
 setInterval(()=>{
-  if(!$('physicalPreview').checked)return;
-  const version=previewVersion,pingToken=token;
-  previewQueue=previewQueue.catch(()=>{}).then(async()=>{
-    if(!$('physicalPreview').checked||version!==previewVersion)return;
-    try{await request('/api/library/preview/ping',{method:'POST',body:new URLSearchParams({token:pingToken})});}catch(e){if(version===previewVersion)previewError(e);}
-  });
+  if(!$('physicalPreview').checked||previewBusy||previewTimer||previewPending)return;
+  if(!previewReady){queuePreview();return;}
+  sendPhysicalPreview(true);
 },1000);
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&$('physicalPreview').checked){stop();stopPhysicalPreview().catch(previewError);}});
 window.addEventListener('pagehide',()=>{navigator.sendBeacon('/api/library/preview/stop',new URLSearchParams({token}));});
@@ -5895,6 +5909,11 @@ void startExternalWiFi() {
 
 void startMDNSIfPossible() {
   if (mdnsStarted || WiFi.status() != WL_CONNECTED) return;
+  // A failed discovery allocation must not trigger another attempt every loop.
+  static unsigned long lastMDNSAttempt=0;
+  if(lastMDNSAttempt&&millis()-lastMDNSAttempt<5000UL)return;
+  if(ESP.getFreeHeap()<12000||ESP.getMaxFreeBlockSize()<6000)return;
+  lastMDNSAttempt=millis();
 
   setStartupIndicatorState(STARTUP_IND_MDNS);
 

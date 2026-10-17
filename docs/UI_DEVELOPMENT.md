@@ -22,3 +22,6 @@ Le contrôle `check-firmware.py` protège le format EEPROM historique par compar
 Les réglages DIRECT sont dans `/motion.cfg` avec checksum, écriture temporaire puis remplacement. Les backups V2 incluent cette extension ; les backups V1 restent acceptés. Le thème est local au navigateur et ne provoque aucune écriture sur la flash du boîtier.
 
 Les commandes d'activation ne sont jamais rejouées automatiquement après une erreur réseau. L'état DIRECT est affiché uniquement après une réponse valide du boîtier ; une réponse plus ancienne ne peut pas remplacer celle d'une commande plus récente. En arrière-plan, le navigateur suspend la consultation de l'état. Au retour, il demande à nouveau confirmation au boîtier.
+
+
+Préférence utilisateur confirmée le 17 octobre : accès éditeur sobre, même carte de navigation que les rubriques, texte aligné au centre verticalement. Aucune grosse barre bleue, aucun libellé en haut à gauche d’un bouton vide, aucune phrase descriptive superflue. Préserver cette décision lors des versions suivantes.

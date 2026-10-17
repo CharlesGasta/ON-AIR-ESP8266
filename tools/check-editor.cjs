@@ -1,7 +1,7 @@
 const fs=require('fs'),path=require('path'),assert=require('assert'),{chromium}=require('playwright');
 (async()=>{
  const browser=await chromium.launch({channel:'chrome',headless:true});const context=await browser.newContext({viewport:{width:390,height:844}}),dir=path.resolve(__dirname,'../preview');
- const library=new Map();let physical=[],failSave=false,busy=false,previewOwner=null;
+ const library=new Map();let physical=[],failSave=false,busy=false,previewOwner=null,previewDelay=0,failPreview=0,activePreviewRequests=0,maxPreviewRequests=0;
  await context.route('http://onair.test/**',async route=>{
   const u=new URL(route.request().url()),body=new URLSearchParams(route.request().postData()||'');
   if(u.pathname==='/api/library')return route.fulfill({json:Array.from(library,([id,item])=>({id,name:item.name}))});
@@ -17,6 +17,9 @@ const fs=require('fs'),path=require('path'),assert=require('assert'),{chromium}=
   if(u.pathname==='/api/library/delete'){library.delete(+body.get('id'));return route.fulfill({body:'OK'});}
   if(u.pathname==='/api/library/preview'){
    if(busy)return route.fulfill({status:409,body:'Arrêtez le direct avant d’activer l’aperçu.'});
+   activePreviewRequests++;maxPreviewRequests=Math.max(maxPreviewRequests,activePreviewRequests);
+   if(previewDelay)await new Promise(r=>setTimeout(r,previewDelay));
+   activePreviewRequests--;if(failPreview){failPreview--;return route.abort('failed');}
    previewOwner=body.get('token');physical.push({data:body.get('data'),cue:+body.get('cue'),play:body.get('play')});return route.fulfill({body:'OK'});
   }
   if(u.pathname==='/api/library/preview/ping')return route.fulfill(previewOwner===body.get('token')?{body:'OK'}:{status:409,body:'Aperçu interrompu'});
@@ -38,6 +41,11 @@ const fs=require('fs'),path=require('path'),assert=require('assert'),{chromium}=
  await page.click('#newAnimation');await page.fill('#animationName','aurore');await page.click('#save');assert((await page.locator('#status').textContent()).includes('déjà utilisé'));assert.equal(library.size,1);
  await page.fill('#animationName','Pulse');await page.getByRole('button',{name:'Violet',exact:true}).click();await page.click('#save');await page.waitForFunction(()=>!dirty&&!saving);assert.equal(library.size,2);
  failSave=true;await page.fill('#animationName','Pulse 2');await page.click('#save');await page.waitForFunction(()=>document.getElementById('status').textContent.includes('impossible'));assert.equal(library.get(33).name,'Pulse');failSave=false;
+ previewDelay=1800;await page.check('#physicalPreview');await page.waitForTimeout(1200);assert(await page.locator('#physicalPreview').isChecked(),'slow activation must not be cancelled by an early heartbeat');
+ for(let n=0;n<20;n++)await page.locator('#color').evaluate((e,n)=>{e.value=n%2?'#ee0000':'#001122';e.dispatchEvent(new Event('input'));},n);
+ await page.waitForTimeout(3200);assert(await page.locator('#physicalPreview').isChecked());assert.equal(maxPreviewRequests,1,'preview requests must not overlap');assert.equal(physical.at(-1).data,await page.evaluate(()=>hexData()),'latest edit must reach device');previewDelay=0;
+ failPreview=1;await page.getByRole('button',{name:'Blanc',exact:true}).click();await page.waitForTimeout(1200);assert(await page.locator('#physicalPreview').isChecked(),'single network failure must recover without clearing switch');
+ await page.uncheck('#physicalPreview');await page.waitForTimeout(200);
  busy=true;await page.check('#physicalPreview');await page.waitForFunction(()=>!document.getElementById('physicalPreview').checked);assert((await page.locator('#status').textContent()).includes('Arrêtez'));busy=false;
  await page.getByRole('button',{name:'Aurore',exact:true}).click();assert.equal(await page.inputValue('#animationName'),'Aurore');
  const valid=Buffer.from(await page.evaluate(()=>Array.from(encode()))),bad=Buffer.from(valid);bad[12]^=1;
@@ -46,5 +54,5 @@ const fs=require('fs'),path=require('path'),assert=require('assert'),{chromium}=
  await page.getByRole('button',{name:'Supprimer Pulse',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.library-row').length===1);assert.equal(library.size,1);
  for(const width of [320,390,430,768]){await page.setViewportSize({width,height:900});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'overflow '+width);}
  await page.setViewportSize({width:390,height:844});await page.evaluate(()=>{localStorage.setItem('onair-theme','dark');document.documentElement.dataset.theme='dark';});await page.waitForTimeout(350);await page.screenshot({path:path.join(dir,'mobile-animation-editor.png'),fullPage:true});
- assert.deepEqual(errors,[]);fs.writeFileSync(path.join(dir,'EDITOR_VERIFICATION.json'),JSON.stringify({result:'PASS',checks:['single shared editor','mandatory unique names','create/load/update/delete named sequences','unsaved physical preview only when enabled','live cue/colour/playback changes','preview OFF stops and blocks further requests','broadcast refusal visible and toggle cleared','preview never saves','cue timings and binary roundtrip','invalid import preserves data','failed save preserves library','mobile widths 320–768','no browser script errors']},null,2));await browser.close();console.log('PASS: named library, live preview switch, validation, editing, deletion, persistence and mobile UI');
+ assert.deepEqual(errors,[]);fs.writeFileSync(path.join(dir,'EDITOR_VERIFICATION.json'),JSON.stringify({result:'PASS',checks:['single shared editor','mandatory unique names','create/load/update/delete named sequences','unsaved physical preview only when enabled','live cue/colour/playback changes','preview OFF stops and blocks further requests','broadcast refusal visible and toggle cleared','slow activation does not race heartbeat','coalesced serial requests deliver latest edit','transient failure keeps preview enabled','preview never saves','cue timings and binary roundtrip','invalid import preserves data','failed save preserves library','mobile widths 320–768','no browser script errors']},null,2));await browser.close();console.log('PASS: named library, live preview switch, validation, editing, deletion, persistence and mobile UI');
 })().catch(e=>{console.error(e);process.exit(1)});
