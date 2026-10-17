@@ -2,6 +2,14 @@
 
 Contrôleur **ON AIR RGB autonome** basé sur ESP8266 / NodeMCU 1.0 (ESP-12E), avec interface Web mobile.
 
+## V3.3.0 — Balayages et éditeur d’animation
+
+Les balayages horizontaux utilisent uniquement le haut et le bas ; les nouveaux balayages verticaux utilisent uniquement les côtés. L’arc-en-ciel et le démarrage approuvés sont inchangés.
+
+Dans les réglages d’une émission, **Créer une animation personnalisée** ouvre les 36 LED : sélection individuelle ou par surface, couleurs, 12 étapes avec maintien et transition directe ou fondue, aperçu, test de 15 secondes et import/export `.onair`. Après enregistrement, sélectionner **Animation personnalisée** dans Animation en direct. Les fichiers de séquences sont conservés lors des OTA et sauvegardés séparément du fichier de configuration général.
+
+Détails : [notes v3.3.0](docs/releases/v3.3.0.md).
+
 ## V3.2.0 — Thèmes et animations spatiales
 
 Choix clair/sombre, animations DIRECT par émission, balayages adaptés au placement 12/5/14/5 des LED, respiration, comète et arc-en-ciel. Nouvelle cinématique de démarrage puis indications de connexion Wi-Fi et de mode autonome. Le téléphone conserve l'interface épurée ; les réglages historiques sont préservés.

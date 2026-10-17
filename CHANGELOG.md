@@ -1,5 +1,12 @@
 # Changelog
 
+## V3.3.0 — Balayages et cues
+
+- surfaces isolées pour les balayages horizontaux et verticaux
+- éditeur mobile de 36 LED, 12 étapes par émission, maintien et fondu, aperçu et test borné
+- fichiers de séquence avec contrôle d’intégrité et remplacement atomique ; import/export indépendant
+- structures EEPROM et cinématique de démarrage conservées
+
 ## V3.2.0 — Thèmes et animations spatiales
 
 - choix clair/sombre mémorisé dans le navigateur
