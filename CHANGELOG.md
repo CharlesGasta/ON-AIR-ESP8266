@@ -1,5 +1,11 @@
 # Changelog
 
+## V3.0.4
+
+- dérivée de la V3.0.3, plafond global de luminosité porté de 50 à 100 % pour les 36 WS2812E
+- aucune modification des fonctions, valeurs par défaut ou paramètres sauvegardés (EEPROM / LittleFS)
+- alimentation LED directe 5 V, GND commun ; précautions de mesure et limite 2 A détaillées dans le README
+
 ## V3.0.3
 
 - nouveau plafond logiciel global de luminosite **50 %** pour les 36 WS2812E

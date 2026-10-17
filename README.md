@@ -25,13 +25,13 @@ Contrôleur **ON AIR RGB autonome** basé sur ESP8266 / NodeMCU 1.0 (ESP-12E), a
 - diagnostic système
 - mise à jour OTA depuis l'interface Web
 
-## Limite lumineuse 50 %
+## Luminosité 100 % — V3.0.4
 
-La V3.0.3 applique un **plafond global fixe de 50 %** a l'intensite de sortie des 36 pixels WS2812E, y compris les alertes, les couleurs de demarrage, les tests et les animations spatiales.
+Version dérivée de la V3.0.3 : plafond global porté de 50 à 100 % pour les 36 WS2812E, y compris les alertes et animations. Les réglages sauvegardés, leur format et toutes les autres fonctions restent inchangés. Une intensité déjà sauvegardée au-dessus de 50 % devient donc réellement plus lumineuse après la mise à jour OTA.
 
-Les curseurs peuvent encore afficher des valeurs jusqu'a 100 %, mais toute valeur au-dela de 50 % a le meme rendu que 50 % jusqu'a une nouvelle version du firmware. Les couleurs restent conservees.
+Alimenter les LED directement en 5 V avec GND commun à l'ESP, sans faire passer leur courant par la carte. Une alimentation 5 V / 2 A n'offre pas de marge garantie au blanc 100 % : l'hypothèse prudente de 60 mA par pixel représente 2,16 A pour les LED seules, plus l'ESP. La mesure précédente de 318 mA à 25 % suggère environ 1,27 A pour le ruban à 100 %, mais cette extrapolation doit être vérifiée.
 
-Ce plafond vise un courant estime entre **0,94 A et 1,40 A** (ESP compris, hypothese carte 300 mA) pour 36 LED en blanc, selon les hypotheses electriques nominale/pessimiste. Ce n'est pas une validation de la capacite de la broche VV ni une protection contre les courts-circuits. Verifier le modele de carte et la source USB reellement utilises.
+Pour mesurer : commencer à faible intensité, monter progressivement, surveiller courant et tension au ruban. Brancher l'ampèremètre en série sur le calibre courant continu adapté (entrée et fusible vérifiés), jamais directement entre +5 V et GND. Couper avant de changer le câblage. Arrêter si la tension chute, si le montage redémarre ou chauffe. Ne pas relier les sorties +5 V de deux alimentations distinctes ; garder les masses communes. Les animations peuvent atteindre 100 % même avec un curseur de macro plus bas.
 
 ## Ruban adressable WS2812E
 
