@@ -5301,11 +5301,13 @@ async function deleteAnimation(item){
   if(saving||loading)return;await request('/api/library/delete',{method:'POST',body:new URLSearchParams({id:item.id})});
   if(editingId===item.id)clearEditor();await refreshLibrary();$('status').textContent='Animation supprimée';
 }
-function previewError(e){$('physicalPreview').checked=false;previewFailed=true;clearTimeout(previewTimer);$('status').textContent='Aperçu arrêté : '+e.message;}
+function previewError(e){$('physicalPreview').checked=false;previewFailed=true;clearTimeout(previewTimer);previewTimer=0;$('status').textContent='Aperçu arrêté : '+e.message;}
 function queuePreview(){
-  clearTimeout(previewTimer);if(!$('physicalPreview').checked)return;
+  if(!$('physicalPreview').checked){clearTimeout(previewTimer);previewTimer=0;return;}
+  if(previewTimer)return;
   const version=previewVersion;
   previewTimer=setTimeout(()=>{
+    previewTimer=0;
     previewQueue=previewQueue.catch(()=>{}).then(async()=>{
       if(!$('physicalPreview').checked||version!==previewVersion)return;
       const body=new URLSearchParams({token,data:hexData(),cue:current,play:playing?'1':'0',elapsed:playing?Math.floor(performance.now()-started):0});
@@ -5314,7 +5316,7 @@ function queuePreview(){
   },100);
 }
 async function stopPhysicalPreview(){
-  const stoppedToken=token;previewVersion++;clearTimeout(previewTimer);$('physicalPreview').checked=false;
+  const stoppedToken=token;previewVersion++;clearTimeout(previewTimer);previewTimer=0;$('physicalPreview').checked=false;
   await previewQueue.catch(()=>{});await request('/api/library/preview/stop',{method:'POST',body:new URLSearchParams({token:stoppedToken})});
 }
 $('physicalPreview').onchange=action(async()=>{
