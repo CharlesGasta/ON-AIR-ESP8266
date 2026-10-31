@@ -1,7 +1,7 @@
 name: Build and release Damien 02
 on:
   push:
-    branches: ["damien-02-v3.6.0"]
+    branches: ["damien-02-v3.6.1"]
     paths:
       - "variants/ON_AIR_DAMIEN_02/**"
       - ".github/workflows/damien-02.yml"
@@ -21,6 +21,7 @@ jobs:
           cp variants/ON_AIR_DAMIEN_02/ON_AIR_DAMIEN_02.ino ON_AIR_ESP8266.ino
           python3 variants/ON_AIR_DAMIEN_02/test_wifi.py
           python3 variants/ON_AIR_DAMIEN_02/test_tricaster.py
+          python3 variants/ON_AIR_DAMIEN_02/test_tricaster_settings.py
           python3 tools/check-firmware.py
           python3 tools/check-motion.py
           python3 tools/check-ota.py
@@ -41,23 +42,23 @@ jobs:
           cp variants/ON_AIR_DAMIEN_02/ON_AIR_DAMIEN_02.ino /tmp/ONAIR02/ONAIR02.ino
           arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --output-dir "$GITHUB_WORKSPACE/build" /tmp/ONAIR02 2>&1 | tee release/COMPILATION.log
           python3 tools/check-memory.py release/COMPILATION.log
-          cp build/ONAIR02.ino.bin release/ON_AIR_DAMIEN_02_V3_6_0_OTA.bin
+          cp build/ONAIR02.ino.bin release/ON_AIR_DAMIEN_02_V3_6_1_OTA.bin
           cp variants/ON_AIR_DAMIEN_02/ON_AIR_DAMIEN_02.ino release/
           cp variants/ON_AIR_DAMIEN_02/README.md release/
           sha256sum release/*.bin release/*.ino > release/SHA256SUMS.txt
       - name: Package standalone source and firmware
         run: |
-          cp variants/ON_AIR_DAMIEN_02/test_tricaster.py release/
+          cp variants/ON_AIR_DAMIEN_02/test_tricaster*.py release/
           cp variants/ON_AIR_DAMIEN_02/TriCasterRec*.h release/
           cd release
-          zip ON_AIR_DAMIEN_02_V3_6_0_COMPLETE.zip *.ino *.bin *.md *.log *.txt *.h *.py
+          zip ON_AIR_DAMIEN_02_V3_6_1_COMPLETE.zip *.ino *.bin *.md *.log *.txt *.h *.py
       - uses: actions/upload-artifact@v4
         with:
-          name: ON_AIR_DAMIEN_02_V3_6_0
+          name: ON_AIR_DAMIEN_02_V3_6_1
           path: release/
           if-no-files-found: error
       - name: Publish distinct release without replacing existing releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v3.6.0-02 release/* --target "$GITHUB_SHA" --title "ON AIR Damien 02 — V3.6.0" --notes-file variants/ON_AIR_DAMIEN_02/README.md --latest=false
+          gh release create v3.6.1-02 release/* --target "$GITHUB_SHA" --title "ON AIR Damien 02 — V3.6.1" --notes-file variants/ON_AIR_DAMIEN_02/README.md --latest=false

@@ -5,7 +5,7 @@
 #include <ctype.h>
 
 // Streaming parser: never allocate a full TriCaster state dictionary.
-// A return value of -1 means no valid REC update, 0 stopped, 1 recording.
+// -1: no update; 0/1: REC off/on; 2/3: STREAM off/on.
 class TcRecParser {
   char tag[320];
   size_t used = 0;
@@ -45,10 +45,14 @@ class TcRecParser {
     while (*p && !isspace((unsigned char)*p) && *p!='/' && *p!='>') ++p;
     if ((size_t)(p-name)!=14 || strncmp(name,"shortcut_state",14)) return -1;
     char key[48], value[16];
-    if (!attribute(tag,"name",key,sizeof(key)) || strcmp(key,"record_toggle")) return -1;
+    if (!attribute(tag,"name",key,sizeof(key))) return -1;
+    int offset;
+    if (!strcmp(key,"record_toggle")) offset=0;
+    else if (!strcmp(key,"streaming_toggle")) offset=2;
+    else return -1;
     if (!attribute(tag,"value",value,sizeof(value))) return -1;
-    if (!strcmp(value,"1") || !strcmp(value,"true")) return 1;
-    if (!strcmp(value,"0") || !strcmp(value,"false")) return 0;
+    if (!strcmp(value,"1") || !strcmp(value,"true")) return offset+1;
+    if (!strcmp(value,"0") || !strcmp(value,"false")) return offset;
     return -1;
   }
 public:
@@ -72,13 +76,37 @@ struct TcRecSettings {
   uint8_t macro;
   uint16_t port;
   uint8_t ip[4];
+  uint8_t streamMacro;
+  uint8_t bothMacro;
+  uint16_t reserved;
   uint32_t checksum;
 };
-static_assert(sizeof(TcRecSettings)==16,"TriCaster settings layout");
+static_assert(sizeof(TcRecSettings)==20,"TriCaster settings layout");
+
+struct TcRecLegacySettings {
+  uint32_t magic;
+  uint8_t enabled,macro;
+  uint16_t port;
+  uint8_t ip[4];
+  uint32_t checksum;
+};
+static_assert(sizeof(TcRecLegacySettings)==16,"Legacy REC-only layout");
 
 inline bool tcSettingsValid(const TcRecSettings& s, uint8_t macroCount);
 inline bool tcSettingsValid(const TcRecSettings& s, uint8_t macroCount) {
-  return s.magic==0x54435231UL && s.enabled<=1 && s.macro<macroCount && s.port!=0 &&
+  return s.magic==0x54435232UL && s.enabled<=1 && s.macro<macroCount &&
+    s.streamMacro<macroCount && s.bothMacro<macroCount && s.reserved==0 && s.port!=0 &&
     s.ip[0]>0 && s.ip[0]<224 && s.ip[0]!=127 &&
     (s.ip[0]!=255 || s.ip[1]!=255 || s.ip[2]!=255 || s.ip[3]!=255);
+}
+
+// A single known flag cannot distinguish REC-only from REC+STREAM.
+// Keep the output unknown until both independent states have been received.
+inline int tcSelectedMacro(const TcRecSettings& s, bool recKnown, bool streamKnown, bool rec, bool stream);
+inline int tcSelectedMacro(const TcRecSettings& s, bool recKnown, bool streamKnown, bool rec, bool stream) {
+  if (!recKnown || !streamKnown) return -2;
+  if (rec && stream) return s.bothMacro;
+  if (rec) return s.macro;
+  if (stream) return s.streamMacro;
+  return -1;
 }

@@ -21,7 +21,7 @@ uint32_t clockNow=0;
 unsigned long millis(){return clockNow;}
 struct Saved { const char* ssid; const char* password; };
 struct Config { bool externalWiFiEnabled=true; unsigned knownWiFiCount=2;
-  Saved knownWiFi[2]={{"Sarah_Charles_Home","test-password"},{"Backup","other-password"}};
+  Saved knownWiFi[2]={{"Studio-Test","test-password"},{"Backup","other-password"}};
 } config;
 struct FakeWiFi {
  int state=0, radioMode=3, clients=2, disconnects=0;
@@ -48,10 +48,10 @@ int main(){
  config.knownWiFiCount=2;
  // Two AP clients, no scan API available: still attempt manually saved SSID.
  updateExternalWiFi(); assert(WiFi.attempts.size()==1);
- assert(WiFi.attempts[0]=="Sarah_Charles_Home" && WiFi.passwords[0]=="test-password");
+ assert(WiFi.attempts[0]=="Studio-Test" && WiFi.passwords[0]=="test-password");
  clockNow=29999; updateExternalWiFi(); assert(WiFi.attempts.size()==1);
  clockNow=30000; updateExternalWiFi(); assert(WiFi.attempts.size()==2 && WiFi.attempts[1]=="Backup");
- clockNow=60000; updateExternalWiFi(); assert(WiFi.attempts.size()==3 && WiFi.attempts[2]=="Sarah_Charles_Home");
+ clockNow=60000; updateExternalWiFi(); assert(WiFi.attempts.size()==3 && WiFi.attempts[2]=="Studio-Test");
  clockNow=90000;
  wifiScanRunning=true; updateExternalWiFi(); assert(WiFi.attempts.size()==3); wifiScanRunning=false;
  wifiScanStartRequested=true; updateExternalWiFi(); assert(WiFi.attempts.size()==3); wifiScanStartRequested=false;
@@ -60,7 +60,7 @@ int main(){
  WiFi.state=0; updateExternalWiFi(); assert(WiFi.attempts.size()==4);
  // Single saved target is retried, never blocked on discovery or AP clients.
  config.knownWiFiCount=1; currentKnownWiFiAttempt=0; clockNow=120000;
- updateExternalWiFi(); assert(WiFi.attempts.size()==5 && WiFi.attempts.back()=="Sarah_Charles_Home");
+ updateExternalWiFi(); assert(WiFi.attempts.size()==5 && WiFi.attempts.back()=="Studio-Test");
  assert(WiFi.disconnects==5);
  puts("PASS: saved SSID retries without discovery; AP clients allowed; rotation, timing, scan guards and connected state verified");
 }
