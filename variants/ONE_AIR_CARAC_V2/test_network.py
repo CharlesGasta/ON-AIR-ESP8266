@@ -77,5 +77,7 @@ with tempfile.TemporaryDirectory() as temp:
 # Check every station connection path applies the correct network profile.
 for name in ['startExternalWiFi','applyPendingExternalWiFi','connectBestKnownWiFi']:
  body=re.search(r'(?:void|bool) '+name+r'\([^\n]*\)\s*\{.*?\n\}',s,re.S).group()
- assert body.index('netApply(')<body.index('WiFi.begin('),name
+ begin=re.search(r'^\s*WiFi\.begin\(',body,re.M)
+ assert begin and body.index('netApply(')<begin.start(),name
 assert '!netReconfigurePending' in s
+
