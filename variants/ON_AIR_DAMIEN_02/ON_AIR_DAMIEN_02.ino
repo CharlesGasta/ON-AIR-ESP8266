@@ -34,7 +34,7 @@
 #include <Updater.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.5.1 STUDIO 36LED 100PCT WIFI FIX"
+#define FIRMWARE_VERSION "3.6.0 STUDIO TRICASTER REC 36LED 100PCT"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -1609,6 +1609,114 @@ bool wifiScanRunning = false;
 bool wifiScanReady = false;
 bool wifiScanFailed = false;
 
+// BEGIN TRICASTER STATE
+
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <ctype.h>
+
+// Streaming parser: never allocate a full TriCaster state dictionary.
+// A return value of -1 means no valid REC update, 0 stopped, 1 recording.
+class TcRecParser {
+  char tag[320];
+  size_t used = 0;
+  bool collecting = false, overflow = false;
+  char quote = 0;
+  static bool attribute(const char* text, const char* wanted, char* out, size_t capacity) {
+    const char* p = text;
+    while (*p && !isspace((unsigned char)*p) && *p != '>') ++p;
+    while (*p) {
+      while (isspace((unsigned char)*p) || *p=='/') ++p;
+      if (!*p || *p=='>') break;
+      const char* name=p;
+      while (isalnum((unsigned char)*p) || *p=='_' || *p=='-' || *p==':') ++p;
+      size_t length=p-name;
+      if (!length) return false;
+      while (isspace((unsigned char)*p)) ++p;
+      if (*p++ != '=') return false;
+      while (isspace((unsigned char)*p)) ++p;
+      char q=*p++;
+      if (q!='\'' && q!='"') return false;
+      const char* value=p;
+      while (*p && *p!=q) ++p;
+      if (!*p) return false;
+      size_t n=p-value;
+      ++p;
+      if (length==strlen(wanted) && !strncmp(name,wanted,length)) {
+        if (n>=capacity) return false;
+        memcpy(out,value,n); out[n]=0; return true;
+      }
+    }
+    return false;
+  }
+  int parse() {
+    const char* p=tag;
+    if (*p++!='<') return -1;
+    const char* name=p;
+    while (*p && !isspace((unsigned char)*p) && *p!='/' && *p!='>') ++p;
+    if ((size_t)(p-name)!=14 || strncmp(name,"shortcut_state",14)) return -1;
+    char key[48], value[16];
+    if (!attribute(tag,"name",key,sizeof(key)) || strcmp(key,"record_toggle")) return -1;
+    if (!attribute(tag,"value",value,sizeof(value))) return -1;
+    if (!strcmp(value,"1") || !strcmp(value,"true")) return 1;
+    if (!strcmp(value,"0") || !strcmp(value,"false")) return 0;
+    return -1;
+  }
+public:
+  void reset() { used=0; collecting=false; overflow=false; quote=0; }
+  int feed(char c) {
+    if (c=='<' && !quote) { used=0; collecting=true; overflow=false; }
+    if (!collecting) return -1;
+    if (used+1<sizeof(tag)) tag[used++]=c; else overflow=true;
+    if (c=='\'' || c=='"') { if (!quote) quote=c; else if (quote==c) quote=0; }
+    if (c=='>' && !quote) {
+      collecting=false; tag[used]=0;
+      return overflow ? -1 : parse();
+    }
+    return -1;
+  }
+};
+
+struct TcRecSettings {
+  uint32_t magic;
+  uint8_t enabled;
+  uint8_t macro;
+  uint16_t port;
+  uint8_t ip[4];
+  uint32_t checksum;
+};
+static_assert(sizeof(TcRecSettings)==16,"TriCaster settings layout");
+
+inline bool tcSettingsValid(const TcRecSettings& s, uint8_t macroCount);
+inline bool tcSettingsValid(const TcRecSettings& s, uint8_t macroCount) {
+  return s.magic==0x54435231UL && s.enabled<=1 && s.macro<macroCount && s.port!=0 &&
+    s.ip[0]>0 && s.ip[0]<224 && s.ip[0]!=127 &&
+    (s.ip[0]!=255 || s.ip[1]!=255 || s.ip[2]!=255 || s.ip[3]!=255);
+}
+
+
+
+
+TcRecSettings tcSettings = {0x54435231UL,0,0,5951,{10,15,10,20},0};
+WiFiClient tcClient;
+TcRecParser tcParser;
+bool tcKnown=false, tcRecording=false, tcPaused=false;
+uint32_t tcLastAttempt=0, tcConnectedAt=0, tcHeartbeatAt=0;
+uint32_t tcUpdates=0;
+int tcApplied=-1;
+
+bool tcControlActive();
+void tcLoadSettings();
+void tcUpdate();
+void tcPause();
+void tcSendSettings();
+void tcSendBanner();
+void tcSetupRoutes();
+bool tcSaveSettings(TcRecSettings& value);
+
+// END TRICASTER STATE
+
 String htmlEscape(const String& s) {
   String o;
   o.reserve(s.length() + 16);
@@ -2996,6 +3104,8 @@ void sendControlPage() {
   server.sendContent(chunk);
   chunk = F("");
 
+  tcSendBanner();
+
   // Chaque macro est envoyee separement.
   // La RAM necessaire reste donc tres faible et constante.
   for (uint8_t i = 0; i < MACRO_COUNT; i++) {
@@ -3471,9 +3581,10 @@ void sendSettingsPage() {
     "<main class='wrap'>"
     ""
     "<nav class='jumpnav' aria-label='Rubriques'><a href='#macros'>Émissions</a>"
-    "<a href='#animations'>Éditeur d’animation</a><a href='#general'>Boîtier</a><a href='#network'>Wi-Fi</a><a href='#system'>Système</a></nav>");
+    "<a href='#tricaster'>Mode</a><a href='#animations'>Éditeur d’animation</a><a href='#general'>Boîtier</a><a href='#network'>Wi-Fi</a><a href='#system'>Système</a></nav>");
   sendHtmlChunk(c);
   c = F("");
+  tcSendSettings();
   sendHtmlFlash(PSTR("<section class='section'><h2>Apparence</h2><div class='theme-choice' role='group' aria-label='Thème'>"
     "<button type='button' data-theme-choice='light' onclick=\"setTheme('light')\" aria-pressed='false'>☀ Clair</button>"
     "<button type='button' data-theme-choice='dark' onclick=\"setTheme('dark')\" aria-pressed='false'>☾ Sombre</button></div></section>"));
@@ -3945,6 +4056,7 @@ void sendStatusResponse() {
 }
 
 void handleDirect() {
+  if(tcControlActive()){server.send_P(409,PSTR("text/plain"),PSTR("Mode TriCaster actif : repasse en mode Manuel pour cette commande"));return;}
   uint8_t i;
 
   if (!parseMacroIndex(i)) {
@@ -3978,6 +4090,7 @@ void handleDirect() {
 }
 
 void handleAlert() {
+  if(tcControlActive()){server.send_P(409,PSTR("text/plain"),PSTR("Mode TriCaster actif : repasse en mode Manuel pour cette commande"));return;}
   uint8_t i;
 
   if (!parseMacroIndex(i)) {
@@ -3997,6 +4110,7 @@ void handleAlert() {
 }
 
 void handleAlertTest() {
+  if(tcControlActive()){server.send_P(409,PSTR("text/plain"),PSTR("Mode TriCaster actif : repasse en mode Manuel pour cette commande"));return;}
   uint8_t i;
 
   if (!parseMacroIndex(i)) {
@@ -4017,6 +4131,7 @@ void handleAlertTest() {
 }
 
 void handleOff() {
+  tcPause();
   // OFF est volontairement prioritaire :
   // il annule DIRECT, HORS DIRECT ou ALERTE et met physiquement le RGB a noir.
   blackout();
@@ -4748,6 +4863,8 @@ void handleFactoryReset() {
   }
   for(uint8_t id=32;id<48;id++){char path[24];snprintf(path,sizeof(path),"/anim%u.bin",id);LittleFS.remove(path);}
   LittleFS.remove("/library.migrated");
+  LittleFS.remove("/tricaster.cfg");
+  LittleFS.remove("/tricaster.tmp");
   setDefaults();
   saveConfig();
   for (uint8_t i=0;i<MACRO_COUNT;i++) {
@@ -5619,6 +5736,7 @@ void setupWebServer() {
   server.on("/api/custom/test",HTTP_POST,handleCustomTest);
   server.on("/style.css",HTTP_GET,handleStyleCSS);
 
+  tcSetupRoutes();
   server.on("/",HTTP_GET,sendControlPage);
 
   server.on("/settings",HTTP_GET,sendSettingsPage);
@@ -5956,6 +6074,205 @@ void updateExternalWiFi() {
   }
 }
 
+// BEGIN TRICASTER IMPLEMENTATION
+
+
+bool tcControlActive() { return tcSettings.enabled!=0; }
+
+void tcLoadSettings() {
+  File f=LittleFS.open("/tricaster.cfg","r");
+  if (!f) return;
+  TcRecSettings saved={};
+  bool ok=f.size()==sizeof(saved) && f.read((uint8_t*)&saved,sizeof(saved))==sizeof(saved);
+  f.close();
+  if (ok && tcSettingsValid(saved,MACRO_COUNT) && saved.checksum==configChecksum((const uint8_t*)&saved,12)) tcSettings=saved;
+  else Serial.println(F("[TRICASTER] Configuration invalide : mode manuel conserve"));
+}
+
+bool tcSaveSettings(TcRecSettings& value) {
+  value.checksum=configChecksum((const uint8_t*)&value,12);
+  File f=LittleFS.open("/tricaster.tmp","w");
+  if (!f) return false;
+  bool ok=f.write((const uint8_t*)&value,sizeof(value))==sizeof(value);
+  f.close();
+  return ok && LittleFS.rename("/tricaster.tmp","/tricaster.cfg");
+}
+
+void tcResetConnection() {
+  tcClient.stop(); tcParser.reset(); tcKnown=false;
+  tcApplied=-1; tcLastAttempt=0;
+}
+
+void tcPause() {
+  if (!tcControlActive()) return;
+  tcPaused=true; tcApplied=-1;
+  Serial.println(F("[TRICASTER] Suivi REC suspendu par OFF"));
+}
+
+const char* tcStatusText() {
+  if (!tcControlActive()) return "Mode manuel";
+  if (tcPaused) return "Suivi REC suspendu par OFF";
+  if (WiFi.status()!=WL_CONNECTED) return "TriCaster : attente du Wi-Fi";
+  if (!tcClient.connected()) return "TriCaster : connexion en cours";
+  if (!tcKnown) return "TriCaster : attente de l'etat REC";
+  return tcRecording ? "TriCaster : REC en cours" : "TriCaster : REC arrete";
+}
+
+void tcStatus() {
+  String json=F("{\"mode\":\""); json+=tcControlActive()?"tricaster":"manual";
+  json+=F("\",\"paused\":");json+=tcPaused?"true":"false";
+  json+=F(",\"connected\":");json+=tcClient.connected()?"true":"false";
+  json+=F(",\"rec\":");json+=tcKnown?(tcRecording?"true":"false"):"null";
+  json+=F(",\"updates\":");json+=String(tcUpdates);
+  json+=F(",\"message\":\"");json+=tcStatusText();json+=F("\"}");
+  server.sendHeader("Cache-Control","no-store");
+  server.send(200,"application/json",json);
+}
+
+void tcUpdate() {
+  if (!tcControlActive()) return;
+  uint32_t now=millis();
+  if (WiFi.status()!=WL_CONNECTED) {
+    if (tcClient.connected() || tcKnown) tcResetConnection();
+  } else if (!tcClient.connected()) {
+    // A disconnected socket may still contain a final packet: discard it.
+    tcKnown=false;
+    if (!tcLastAttempt || (uint32_t)(now-tcLastAttempt)>=3000UL) {
+      tcLastAttempt=now;
+      tcClient.stop();tcParser.reset();
+      IPAddress ip(tcSettings.ip[0],tcSettings.ip[1],tcSettings.ip[2],tcSettings.ip[3]);
+      // Bounded connect only; all state ingestion below is incremental.
+      tcClient.setTimeout(80);
+      if (tcClient.connect(ip,tcSettings.port)) {
+        tcClient.setNoDelay(true);
+        tcClient.keepAlive(5,5,3);
+        tcClient.print(F("<register name=\"NTK_states\"/>\n"));
+        tcConnectedAt=now;tcHeartbeatAt=now;
+        Serial.println(F("[TRICASTER] Connecte : abonnement aux etats REC"));
+      }
+    }
+  }
+  if (tcClient.connected()) {
+    unsigned long started=micros();
+    unsigned budget=1024;
+    while (budget-- && tcClient.available() && (uint32_t)(micros()-started)<2000UL) {
+      int value=tcParser.feed((char)tcClient.read());
+      if (value>=0) {
+        if (!tcKnown || tcRecording!=(value==1)) {
+          Serial.println(value?F("[TRICASTER] REC ON"):F("[TRICASTER] REC OFF"));
+          tcApplied=-1;
+        }
+        tcKnown=true;tcRecording=value==1;++tcUpdates;
+      }
+    }
+    // No periodic REC changes are expected while a recording runs. TCP
+    // keepalive detects link loss without treating an idle stream as REC OFF.
+    if (!tcKnown && (uint32_t)(now-tcConnectedAt)>10000UL) {
+      Serial.println(F("[TRICASTER] Aucun etat REC recu : nouvelle connexion"));
+      tcClient.stop();tcParser.reset();
+    } else if ((uint32_t)(now-tcHeartbeatAt)>=5000UL) {
+      tcHeartbeatAt=now;tcClient.print('\n');
+    }
+  }
+  if (!startupSequenceComplete || settingsPreviewActive || libraryPreviewActive || tcPaused) return;
+  if (!tcKnown || !tcClient.connected() || WiFi.status()!=WL_CONNECTED) {
+    if (tcApplied!=2) { blackout();tcApplied=2; }
+    static uint32_t lastErrorFrame=0;
+    if ((uint32_t)(now-lastErrorFrame)>=100UL) {
+      lastErrorFrame=now;
+      setRGBLevel(255,130,0,((now/500UL)&1)?12:0);
+    }
+  } else if (tcRecording) {
+    if (tcApplied!=1 || !outputEnabled || activeMacro!=tcSettings.macro) {
+      applyMacro(tcSettings.macro);tcApplied=1;
+    }
+  } else if (tcApplied!=0 || outputEnabled || activeMacro>=0) {
+    blackout();tcApplied=0;
+  }
+}
+
+void tcSendBanner() {
+  if (!tcControlActive()) return;
+  String c=F("<section class='section' style='margin:12px 0'><b id='tcLiveStatus'>");
+  c+=tcStatusText();
+  c+=F("</b><p><a href='/settings#tricaster'>Mode et reglages TriCaster</a></p>"
+    "<form method='POST' action='/tricaster/resume'><button type='submit'>Reprendre le suivi REC</button></form></section>"
+    "<script>setInterval(function(){fetch('/api/tricaster/status',{cache:'no-store'}).then(r=>r.json()).then(s=>{var e=document.getElementById('tcLiveStatus');if(e)e.textContent=s.message}).catch(()=>{})},2000)</script>");
+  sendHtmlChunk(c);
+}
+
+void tcSendSettings() {
+  String c=F("<form method='POST' action='/saveTriCaster'><details id='tricaster' class='section' open>"
+    "<summary>Mode de fonctionnement</summary><label>Mode</label><select name='mode'>"
+    "<option value='manual'");
+  if (!tcControlActive()) c+=F(" selected");
+  c+=F(">Manuel</option><option value='tricaster'");
+  if (tcControlActive()) c+=F(" selected");
+  c+=F(">TriCaster — suivre REC</option></select>"
+    "<p class='small'>Le boitier lit l'enregistrement. Il ne commande pas le TriCaster.</p>"
+    "<label>Adresse IP du TriCaster</label><input name='tcIP' required value='");
+  c+=IPAddress(tcSettings.ip[0],tcSettings.ip[1],tcSettings.ip[2],tcSettings.ip[3]).toString();
+  c+=F("'><label>Port de connexion</label><input name='tcPort' type='number' min='1' max='65535' value='");
+  c+=String(tcSettings.port);
+  c+=F("'><label>Emission allumee pendant REC</label><select name='tcMacro'>");
+  for (uint8_t i=0;i<MACRO_COUNT;++i) {
+    c+=F("<option value='");c+=String(i);c+=F("'");
+    if (i==tcSettings.macro)c+=F(" selected");
+    c+=F(">");c+=htmlEscape(config.macro[i].name);c+=F("</option>");
+  }
+  c+=F("</select><label>Wi-Fi du routeur de regie</label>"
+    "<input name='tcSSID' maxlength='32' value='CARAC 2.4G'>"
+    "<label>Mot de passe Wi-Fi</label><input name='tcPassword' type='password' maxlength='64' autocomplete='new-password' placeholder='Vide : conserver celui de ce reseau'>"
+    "<p class='small'>REC allume l'emission avec son animation. REC arrete eteint le boitier. "
+    "Orange clignotant : connexion ou etat REC indisponible. OFF suspend le suivi jusqu'a Reprendre.</p>"
+    "<button type='submit' class='save'>ENREGISTRER LE MODE</button></details></form>");
+  sendHtmlChunk(c);
+  tcSendBanner();
+}
+
+void tcHandleSave() {
+  String mode=server.arg("mode");
+  IPAddress ip;
+  long port=server.arg("tcPort").toInt();
+  long macro=server.arg("tcMacro").toInt();
+  if ((mode!="manual" && mode!="tricaster") || !server.hasArg("tcMacro") ||
+      !ip.fromString(server.arg("tcIP")) || port<1 || port>65535 || macro<0 || macro>=MACRO_COUNT) {
+    server.send_P(400,PSTR("text/plain"),PSTR("Mode, IP, port ou emission invalide"));return;
+  }
+  TcRecSettings value=tcSettings;
+  value.enabled=mode=="tricaster";value.macro=macro;value.port=port;
+  for(uint8_t i=0;i<4;++i)value.ip[i]=ip[i];
+  if(!tcSettingsValid(value,MACRO_COUNT)) {
+    server.send_P(400,PSTR("text/plain"),PSTR("Adresse TriCaster invalide"));return;
+  }
+  String ssid=server.arg("tcSSID"),password=server.arg("tcPassword");ssid.trim();
+  if(value.enabled && (ssid.length()==0 || ssid.length()>32 || password.length()>64 ||
+      (password.length()>0 && password.length()<8) || (findKnownWiFi(ssid)<0 && password.length()==0))) {
+    server.send_P(400,PSTR("text/plain"),PSTR("Renseigne le Wi-Fi de regie et son mot de passe s'il n'est pas deja memorise"));return;
+  }
+  if(!tcSaveSettings(value)) {server.send_P(500,PSTR("text/plain"),PSTR("Echec sauvegarde du mode : reglages precedents conserves"));return;}
+  tcResetConnection();tcSettings=value;tcPaused=false;
+  libraryPreviewActive=false;settingsPreviewActive=false;blackout();
+  if(value.enabled) {
+    rememberWiFi(ssid,password);config.externalWiFiEnabled=true;saveConfig();
+    pendingExternalWiFiApply=true;pendingExternalWiFiApplyAt=millis()+EXTERNAL_APPLY_DELAY_MS;
+  }
+  server.sendHeader("Location","/settings#tricaster",true);
+  server.send_P(303,PSTR("text/plain"),PSTR(""));
+}
+
+void tcSetupRoutes() {
+  server.on("/saveTriCaster",HTTP_POST,tcHandleSave);
+  server.on("/api/tricaster/status",HTTP_GET,tcStatus);
+  server.on("/tricaster/resume",HTTP_POST,[](){
+    tcPaused=false;tcApplied=-1;
+    server.sendHeader("Location","/",true);
+    server.send_P(303,PSTR("text/plain"),PSTR(""));
+  });
+}
+
+// END TRICASTER IMPLEMENTATION
+
 void setup() {
   otaBootId=ESP.random();
   Serial.begin(115200);
@@ -5982,6 +6299,7 @@ void setup() {
   Serial.println(ESP.getResetInfo());
   loadConfig();
   loadMotionSettings();
+  tcLoadSettings();
   migrateAnimationLibrary();
 
   // Etat initial propre, puis indicateur de progression sans ralentir le boot.
@@ -6043,6 +6361,7 @@ void loop() {
   updateStartupIndicatorNetworkState();
   updateExternalWiFi();
   updateStartupIndicator();
+  tcUpdate();
 
   if (mdnsStarted) {
     MDNS.update();

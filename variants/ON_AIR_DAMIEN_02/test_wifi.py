@@ -9,7 +9,7 @@ def function(name, next_name):
     return source[start:end]
 
 retry = function('connectBestKnownWiFi', 'void startMDNSIfPossible();')
-update = function('updateExternalWiFi', 'void setup() {')
+update = function('updateExternalWiFi', '// BEGIN TRICASTER IMPLEMENTATION')
 prefix = r'''
 #include <cassert>
 #include <cstdint>
@@ -72,4 +72,3 @@ with tempfile.TemporaryDirectory() as temp:
     assert compiler, 'Host C++ compiler required'
     subprocess.run([compiler,'-std=c++17',str(cpp),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
-

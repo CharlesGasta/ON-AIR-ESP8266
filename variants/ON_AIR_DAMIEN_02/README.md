@@ -1,18 +1,45 @@
-# ON AIR Damien 02 — V3.5.1 STUDIO — correction Wi-Fi
+# ON AIR Damien 02 — V3.6.0 STUDIO + TriCaster REC
 
-Corrige la V3.5.0-02 pour le deuxième boîtier.
-- Les tentatives de connexion utilisent directement les SSID mémorisés, même absents de la liste détectée.
-- Les réseaux enregistrés sont essayés à tour de rôle, sans scan automatique bloquant.
-- La reconnexion reste active même quand un téléphone utilise le point d'accès.
-- Les scans manuels et l'application des réglages ne démarrent pas simultanément.
-- Diagnostic série : statut, motif de déconnexion et adresse IP obtenue. Aucun mot de passe n'est journalisé.
-- Le scan manuel inclut les points d'accès masqués ; leur nom n'est pas nécessairement annoncé.
+Base : V3.5.1-02, validee par Charles sur le deuxieme ESP8266 le 31 octobre 2026.
+Conserve 36 WS2812E, D5/GPIO14, macros, editeur de cinematrique, banque et bibliotheque, logos, animations, mode manuel et OTA.
 
-Conservés : éditeur complet V3.5.0 STUDIO, bibliothèque, séquences, macros, logos, effets, OTA, 36 WS2812E, D5/GPIO14, EEPROM et fichiers LittleFS.
-Identifiants par défaut : ON_AIR-MOC-02, onair-moc-02.local ; mot de passe AP par défaut 12345678.
-Les réglages et mots de passe déjà enregistrés restent conservés.
-Ne pas effacer la flash ni faire de remise à zéro usine.
-Le firmware Damien original et ses releases sont inchangés.
+## Activation
 
-Tests de reconnexion exécutant les fonctions C++ réelles avec une radio simulée ; tests moteur d'animation/configuration/OTA/mémoire et compilation ESP8266 en CI.
-Le comportement radio dans le logement doit encore être vérifié sur le boîtier : ce correctif supprime les blocages logiciels identifiés, sans prétendre avoir confirmé la cause de l'absence au scan.
+1. Installer le .bin par l'interface OTA existante, ou ouvrir le .ino complet et televerser par USB avec Only Sketch et le meme decoupage flash.
+2. Reglages > Mode de fonctionnement > TriCaster — suivre REC.
+3. Adresse proposee : 10.15.10.20. Port : 5951.
+4. Choisir l'emission dont la couleur et l'animation seront utilisees pendant REC.
+5. Wi-Fi de regie propose : CARAC 2.4G. Renseigner son mot de passe une fois s'il n'est pas deja memorise. Aucun mot de passe prive n'est integre ou publie.
+6. Enregistrer. Le boitier se connecte au routeur puis au TriCaster.
+
+Pendant REC : emission allumee avec son animation. REC arrete : extinction complete.
+Orange clignotant : connexion ou etat REC indisponible, et non une confirmation de REC arrete.
+OFF suspend le suivi ; Reprendre le suivi REC le reactive. Enregistrer un mode ou redemarrer reinitialise aussi cette suspension.
+Les commandes DIRECT/ALERTE manuelles restent disponibles en mode Manuel ; elles sont refusees en mode TriCaster pour eviter deux sources de commande contradictoires.
+Le mode Manuel reste le defaut a la premiere installation. Le passage en mode TriCaster est volontaire.
+
+## Protocole et provenance
+
+Lecture seule du flux TCP TriCaster sur 5951, abonnement `<register name="NTK_states"/>`, lecture de `shortcut_state name="record_toggle"`.
+Ce protocole est implemente dans bitfocus/node-tricaster (teste par ses auteurs sur TC2 Elite et TC Mini 4K).
+Le module Companion newtek-tricaster utilise aussi record_toggle pour le retour d'enregistrement.
+Sources : https://github.com/bitfocus/node-tricaster/blob/main/index.js et https://github.com/bitfocus/companion-module-newtek-tricaster/blob/master/index.js
+Le premier sketch personnel ON AIR TriCaster n'a pas ete retrouve dans les archives accessibles ; cette version ne pretend donc pas etre sa copie exacte.
+Ce mode suit REC uniquement, pas STREAM, et ne lance ni n'arrete l'enregistrement du TriCaster.
+
+## Conservation et limites
+
+Parametres EEPROM et fichiers d'animation inchanges. Nouveau fichier /tricaster.cfg avec checksum et remplacement atomique ; absent ou invalide = mode Manuel.
+Le backup general historique ne contient pas ce nouveau fichier : noter separement les reglages TriCaster avant une remise a zero.
+Les identifiants restent ON_AIR-MOC-02 / onair-moc-02.local. Le mot de passe AP deja enregistre est conserve.
+La remise a zero usine supprime aussi les reglages TriCaster.
+L'original Damien et ses releases restent intacts. Cette release du boitier 02 est distincte.
+
+## Verification
+
+Tests C++ du parseur et du controleur reels : XML fragmente, gros dictionnaire, etats REC, mode manuel, pause OFF, perte de lien, reprise, demarrage et apercus.
+Tests existants moteur LED, EEPROM, OTA et budget memoire ; compilation NodeMCU ESP-12E.
+Core ESP8266 3.1.2, NeoPixel 1.15.5 (version utilisee par le firmware Damien original).
+Le flux est traite avec un budget de 1024 octets / 2 ms par boucle ; tentative TCP bornee a 80 ms, au plus toutes les 3 secondes.
+Un flux sans changement de REC reste valide ; keepalive TCP detecte les pertes silencieuses. Un etat inconnu n'est jamais transforme en REC OFF.
+Validation reelle avec le routeur CARAC et le TriCaster a faire par l'utilisateur : compilation et tests simules ne la remplacent pas.
