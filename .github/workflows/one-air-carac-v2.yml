@@ -1,0 +1,69 @@
+name: Build and release One air Carac v2
+on:
+  push:
+    branches: ["one-air-carac-v2.0.0"]
+    paths:
+      - "variants/ONE_AIR_CARAC_V2/**"
+      - ".github/workflows/one-air-carac-v2.yml"
+permissions:
+  contents: write
+jobs:
+  build-and-release-02:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact clone and preserved original
+        run: python3 variants/ONE_AIR_CARAC_V2/verify_clone.py
+      - name: Test motion engine, editor and saved configuration on clone
+        run: |
+          git fetch --depth=1 origin efefbef61bba26bd57feaf1d220a7d36801d6897
+          git fetch --depth=1 origin 9fd36bbb627346f8e6a70c49339bc49a015df8f1
+          cp variants/ONE_AIR_CARAC_V2/ONE_AIR_CARAC_V2.ino ON_AIR_ESP8266.ino
+          python3 variants/ONE_AIR_CARAC_V2/test_wifi.py
+          python3 variants/ONE_AIR_CARAC_V2/test_tricaster.py
+          python3 variants/ONE_AIR_CARAC_V2/test_tricaster_settings.py
+          python3 variants/ONE_AIR_CARAC_V2/test_network.py
+          python3 variants/ONE_AIR_CARAC_V2/test_usage_permissions.py
+          node variants/ONE_AIR_CARAC_V2/test_usage_js.cjs
+          node variants/ONE_AIR_CARAC_V2/test_v2_ui.cjs
+          python3 variants/ONE_AIR_CARAC_V2/test_usage_ui.py
+          python3 tools/check-firmware.py
+          python3 tools/check-motion.py
+          python3 tools/check-ota.py
+          python3 tools/check-web-memory.py
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install pinned toolchain
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://arduino.esp8266.com/stable/package_esp8266com_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp8266:esp8266@3.1.2
+          arduino-cli lib install "Adafruit NeoPixel@1.15.5"
+      - name: Compile clone for NodeMCU ESP-12E
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ONAIR02 build release
+          cp variants/ONE_AIR_CARAC_V2/ONE_AIR_CARAC_V2.ino /tmp/ONAIR02/ONAIR02.ino
+          arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --output-dir "$GITHUB_WORKSPACE/build" /tmp/ONAIR02 2>&1 | tee release/COMPILATION.log
+          python3 tools/check-memory.py release/COMPILATION.log
+          cp build/ONAIR02.ino.bin release/ONE_AIR_CARAC_V2_0_0_OTA.bin
+          cp variants/ONE_AIR_CARAC_V2/ONE_AIR_CARAC_V2.ino release/
+          cp variants/ONE_AIR_CARAC_V2/README.md release/
+          sha256sum release/*.bin release/*.ino > release/SHA256SUMS.txt
+      - name: Package standalone source and firmware
+        run: |
+          cp variants/ONE_AIR_CARAC_V2/test_*.py variants/ONE_AIR_CARAC_V2/test_*.cjs release/
+          cp variants/ONE_AIR_CARAC_V2/TriCasterRec*.h variants/ONE_AIR_CARAC_V2/Network*.h release/
+          cd release
+          zip ONE_AIR_CARAC_V2_0_0_COMPLETE.zip *.ino *.bin *.md *.log *.txt *.h *.py *.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ONE_AIR_CARAC_V2_0_0
+          path: release/
+          if-no-files-found: error
+      - name: Publish distinct release without replacing existing releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create one-air-carac-v2.0.0 release/* --target "$GITHUB_SHA" --title "One air Carac v2 — 2.0.0" --notes-file variants/ONE_AIR_CARAC_V2/README.md --latest=false
