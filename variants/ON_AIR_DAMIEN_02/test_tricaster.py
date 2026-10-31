@@ -7,6 +7,7 @@ assert core.replace('#pragma once','') in source, 'Embedded parser diverged'
 impl=(root/'TriCasterRec.h').read_text(encoding='utf8')
 assert impl.replace('#pragma once','') in source, 'Embedded controller diverged'
 update=re.search(r'void tcUpdate\(\) \{.*?\n\}',impl,re.S).group()
+release=re.search(r'void tcReleaseManual\(\) \{.*?\n\}',impl,re.S).group()
 pause=re.search(r'void tcPause\(\) \{.*?\n\}',impl,re.S).group()
 reset=re.search(r'void tcResetConnection\(\) \{.*?\n\}',impl,re.S).group()
 prefix=r'''
@@ -32,10 +33,11 @@ struct FakeClient {
  int read(){char c=input[0];input.erase(0,1);return c;}
 } tcClient;
 struct Log {void println(const char*){}} Serial;
-TcRecSettings tcSettings={0x54435232UL,0,2,5951,{192,0,2,20},1,3,0,0};
+TcRecSettings tcSettings={0x54435233UL,0,1,5951,{192,0,2,20},2,3,0,0};
 TcRecParser tcParser;
 bool tcKnown=false,tcRecording=false,tcPaused=false;
 bool tcRecKnown=false,tcStreamKnown=false,tcStreaming=false;
+bool tcManualOverride=false;
 uint32_t tcLastAttempt=0,tcConnectedAt=0,tcHeartbeatAt=0,tcUpdates=0;
 int tcApplied=-1;
 bool startupSequenceComplete=true,settingsPreviewActive=false,libraryPreviewActive=false;
@@ -66,7 +68,7 @@ int main(){
  assert(ingest(p,"<shortcut_state name='record_toggle' value='0'/>")==std::vector<int>{0});
  for(int i=0;i<20000;++i)assert(ingest(p,"<shortcut_state name='other' value='0'/>").empty());
  assert(ingest(p,"<shortcut_state name='record_toggle' value='1'/>")==std::vector<int>{1});
- assert(tcSettingsValid(tcSettings,4));tcSettings.macro=4;assert(!tcSettingsValid(tcSettings,4));tcSettings.macro=2;
+ assert(tcSettingsValid(tcSettings,4));tcSettings.macro=4;assert(!tcSettingsValid(tcSettings,4));tcSettings.macro=1;
  // Manual mode must never connect or change LEDs.
  tcUpdate();assert(tcClient.connections==0 && applyCount==0 && offCount==0);
  tcSettings.enabled=1;tcUpdate();assert(tcClient.connections==1 && !tcKnown && !outputEnabled);
@@ -74,7 +76,7 @@ int main(){
  // A fragmented initial state cannot light REC before a complete valid tag.
  tcClient.input="<shortcut_state name='streaming_toggle' value='0'/>";tcUpdate();assert(!tcKnown && !outputEnabled);
  tcClient.input="<shortcut_state name='record_toggle' value='";tcUpdate();assert(!tcKnown && !outputEnabled);
- tcClient.input="1'/>";tcUpdate();assert(tcKnown && outputEnabled && activeMacro==2 && applyCount==1);
+ tcClient.input="1'/>";tcUpdate();assert(tcKnown && outputEnabled && activeMacro==1 && applyCount==1);
  tcUpdate();assert(applyCount==1); // Do not restart the animation every loop.
  clockMs+=6000;tcUpdate();assert(outputEnabled && tcKnown); // Quiet stream is not REC OFF.
  tcClient.input="<shortcut_state name='record_toggle' value='0'/>";tcUpdate();assert(!outputEnabled);
@@ -96,28 +98,30 @@ int main(){
  tcClient.input="<shortcut_state name='record_toggle' value='0'/><shortcut_state name='streaming_toggle' value='0'/>";
  tcUpdate();assert(tcKnown && !outputEnabled && tcApplied==0);
  tcClient.input="<shortcut_state name='record_toggle' value='1'/>";
- tcUpdate();assert(outputEnabled && activeMacro==2);
+ tcUpdate();assert(outputEnabled && activeMacro==1);
  tcClient.input="<shortcut_state name='streaming_toggle' value='1'/>";
  tcUpdate();assert(outputEnabled && activeMacro==3);
  tcClient.input="<shortcut_state name='record_toggle' value='0'/>";
- tcUpdate();assert(outputEnabled && activeMacro==1);
+ tcUpdate();assert(outputEnabled && activeMacro==2);
  tcClient.input="<shortcut_state name='streaming_toggle' value='0'/>";
  tcUpdate();assert(!outputEnabled);
  assert(tcSelectedMacro(tcSettings,false,true,false,true)==-2);
  assert(tcSelectedMacro(tcSettings,true,false,true,false)==-2);
  // A previous STREAM ON cannot survive a lost connection.
- tcClient.input="<shortcut_state name='streaming_toggle' value='1'/>";tcUpdate();assert(activeMacro==1);
+ tcClient.input="<shortcut_state name='streaming_toggle' value='1'/>";tcUpdate();assert(activeMacro==2);
  WiFi.state=0;tcUpdate();assert(!tcKnown && !tcRecKnown && !tcStreamKnown);
  WiFi.state=3;clockMs+=3001;tcUpdate();
  tcClient.input="<shortcut_state name='record_toggle' value='1'/>";tcUpdate();assert(!tcKnown && !outputEnabled);
- tcClient.input="<shortcut_state name='streaming_toggle' value='0'/>";tcUpdate();assert(tcKnown && activeMacro==2);
+ tcClient.input="<shortcut_state name='streaming_toggle' value='0'/>";tcUpdate();assert(tcKnown && activeMacro==1);
+ tcManualOverride=true;applyMacro(0);tcClient.input="<shortcut_state name='streaming_toggle' value='1'/>";tcUpdate();assert(activeMacro==0 && tcStreaming);
+ tcReleaseManual();tcUpdate();assert(activeMacro==3 && !tcManualOverride);
  tcSettings.enabled=0;int calls=applyCount;tcUpdate();assert(applyCount==calls);
  std::cout<<"PASS: independent REC/STREAM, four combinations, three animations, unknown-state guard, fragmented XML, OFF latch, reconnect and link loss"<<std::endl;
 }
 '''
 with tempfile.TemporaryDirectory() as temp:
  cpp=Path(temp)/'test.cpp';exe=Path(temp)/'test'
- cpp.write_text(core+'\n'+prefix+reset+pause+update+main,encoding='utf8')
+ cpp.write_text(core+'\n'+prefix+reset+pause+release+update+main,encoding='utf8')
  compiler=shutil.which('g++') or shutil.which('clang++');assert compiler
  subprocess.run([compiler,'-std=c++17','-Wall','-Wextra',str(cpp),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)

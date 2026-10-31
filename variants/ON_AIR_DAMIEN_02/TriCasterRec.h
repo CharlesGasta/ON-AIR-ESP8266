@@ -12,7 +12,7 @@ void tcLoadSettings() {
     f.close();
     if(valid && old.magic==0x54435231UL && old.enabled<=1 && old.macro<MACRO_COUNT && old.port &&
        old.checksum==configChecksum((const uint8_t*)&old,12)) {
-      saved=tcSettings;saved.enabled=old.enabled;saved.macro=old.macro;saved.port=old.port;
+      saved=tcSettings;saved.enabled=old.enabled;saved.port=old.port;
       memcpy(saved.ip,old.ip,4);
       if(tcSettingsValid(saved,MACRO_COUNT)) {tcSettings=saved;tcSaveSettings(tcSettings);}
     }
@@ -20,11 +20,16 @@ void tcLoadSettings() {
   }
   bool ok=f.size()==sizeof(saved) && f.read((uint8_t*)&saved,sizeof(saved))==sizeof(saved);
   f.close();
-  if (ok && tcSettingsValid(saved,MACRO_COUNT) && saved.checksum==configChecksum((const uint8_t*)&saved,16)) tcSettings=saved;
+  if(ok && saved.magic==0x54435232UL && saved.enabled<=1 && saved.checksum==configChecksum((const uint8_t*)&saved,16)) {
+    saved.magic=0x54435233UL;saved.macro=1;saved.streamMacro=2;saved.bothMacro=3;saved.reserved=0;
+    if(tcSettingsValid(saved,MACRO_COUNT)){tcSettings=saved;tcSaveSettings(tcSettings);}
+  }
+  else if (ok && tcSettingsValid(saved,MACRO_COUNT) && saved.checksum==configChecksum((const uint8_t*)&saved,16)) tcSettings=saved;
   else Serial.println(F("[TRICASTER] Configuration invalide : mode manuel conserve"));
 }
 
 bool tcSaveSettings(TcRecSettings& value) {
+  if(!tcSettingsValid(value,MACRO_COUNT))return false;
   value.checksum=configChecksum((const uint8_t*)&value,16);
   File f=LittleFS.open("/tricaster.tmp","w");
   if (!f) return false;
@@ -40,12 +45,19 @@ void tcResetConnection() {
 }
 
 void tcPause() {
+  tcManualOverride=false;
   if (!tcControlActive()) return;
   tcPaused=true; tcApplied=-1;
   Serial.println(F("[TRICASTER] Suivi REC/STREAM suspendu par OFF"));
 }
 
+void tcReleaseManual() {
+  tcManualOverride=false;tcPaused=false;tcApplied=-1;
+  blackout();
+}
+
 const char* tcStatusText() {
+  if(tcManualOverride) return "CARAC : priorite manuelle";
   if (!tcControlActive()) return "Mode manuel";
   if (tcPaused) return "Suivi REC/STREAM suspendu par OFF";
   if (WiFi.status()!=WL_CONNECTED) return "TriCaster : attente du Wi-Fi";
@@ -122,7 +134,7 @@ void tcUpdate() {
       tcHeartbeatAt=now;tcClient.print('\n');
     }
   }
-  if (!startupSequenceComplete || settingsPreviewActive || libraryPreviewActive || tcPaused) return;
+  if (!startupSequenceComplete || settingsPreviewActive || libraryPreviewActive || tcPaused || tcManualOverride) return;
   if (!tcKnown || !tcClient.connected() || WiFi.status()!=WL_CONNECTED) {
     if (tcApplied!=2) { blackout();tcApplied=2; }
     static uint32_t lastErrorFrame=0;
@@ -140,103 +152,90 @@ void tcUpdate() {
   }
 }
 
+
+
 void tcSendBanner() {
-  if (!tcControlActive()) return;
-  String c=F("<section class='section' style='margin:12px 0'><b id='tcLiveStatus'>");
+  String c=F("<section class='usage-panel'><div><span class='eyebrow'>PILOTAGE</span><h2>CARAC garde la priorite</h2>"
+    "<p id='tcLiveStatus' role='status'>");
   c+=tcStatusText();
-  c+=F("</b><p><a href='/settings#tricaster'>Mode et reglages TriCaster</a></p>"
-    "<form method='POST' action='/tricaster/resume'><button type='submit'>Reprendre le suivi REC / STREAM</button></form></section>"
-    "<script>setInterval(function(){fetch('/api/tricaster/status',{cache:'no-store'}).then(r=>r.json()).then(s=>{var e=document.getElementById('tcLiveStatus');if(e)e.textContent=s.message}).catch(()=>{})},2000)</script>");
+  c+=F("</p></div><div class='usage-switch'><form method='POST' action='/usage/mode'>"
+    "<input type='hidden' name='mode' value='manual'><button type='submit' aria-pressed='");
+  c+=tcControlActive()?"false":"true";
+  c+=F("'>CARAC uniquement</button></form><form method='POST' action='/usage/mode'>"
+    "<input type='hidden' name='mode' value='tricaster'><button type='submit' aria-pressed='");
+  c+=tcControlActive()?"true":"false";
+  c+=F("'>CARAC + TriCaster</button></form></div><a class='small' href='/settings#tricaster'>Regler la connexion TriCaster →</a>");
+  if(tcControlActive()) c+=F("<form method='POST' action='/tricaster/resume'><button type='submit' class='resume-button'>Reprendre le suivi automatique</button></form>");
+  c+=F("</section><script>setInterval(function(){fetch('/api/tricaster/status',{cache:'no-store'}).then(r=>r.json()).then(s=>{const e=document.getElementById('tcLiveStatus');if(e)e.textContent=s.message}).catch(()=>{})},2000)</script>");
   sendHtmlChunk(c);
+}
+
+void tcSendAutomaticCard(uint8_t i) {
+  String c=F("<section class='card automatic-card' id='macro-");c+=String(i);
+  c+=F("'><div class='macrohead'>");
+  if(logoAvailable(i)){c+=F("<img class='logo' alt='' src='/logo?i=");c+=String(i);c+=F("'>");}
+  c+=F("<div class='mname'><span class='eyebrow'>TRICASTER UNIQUEMENT</span><h2>");
+  c+=i==1?F("REC"):i==2?F("STREAM"):F("REC + STREAM");
+  c+=F("</h2></div></div><div class='automatic-state' id='auto-state-");c+=String(i);
+  c+=F("' role='status'>Etat en attente</div><a class='profile-link' href='/macro?i=");c+=String(i);
+  c+=F("'>Regler l'animation →</a></section>");sendHtmlChunk(c);
 }
 
 void tcSendSettings() {
-  String c=F("<form method='POST' action='/saveTriCaster'><details id='tricaster' class='section' open>"
-    "<summary>Mode de fonctionnement</summary><label>Mode</label><select name='mode'>"
-    "<option value='manual'");
-  if (!tcControlActive()) c+=F(" selected");
-  c+=F(">Manuel</option><option value='tricaster'");
-  if (tcControlActive()) c+=F(" selected");
-    c+=F(">TriCaster — REC / STREAM</option></select>"
-    "<p class='small'>Le boitier suit l'enregistrement et la diffusion sans commander le TriCaster.</p>"
-    "<label>Adresse IP du TriCaster</label><input name='tcIP' required value='");
+  String c=F("<form method='POST' action='/saveTriCaster'><details id='tricaster' class='section'>"
+    "<summary>TriCaster — connexion automatique</summary>"
+    "<p>REC, STREAM et REC + STREAM sont declenches uniquement par le TriCaster. "
+    "Les commandes CARAC restent prioritaires.</p><input type='hidden' name='mode' value='");
+  c+=tcControlActive()?"tricaster":"manual";
+  c+=F("'><label>Adresse IP du TriCaster</label><input name='tcIP' required value='");
   c+=IPAddress(tcSettings.ip[0],tcSettings.ip[1],tcSettings.ip[2],tcSettings.ip[3]).toString();
-  c+=F("'><label>Port de connexion</label><input name='tcPort' type='number' min='1' max='65535' value='");
-  c+=String(tcSettings.port);
-  c+=F("'><label>REC seul — emission et animation</label><select name='tcMacro'>");
-  for (uint8_t i=0;i<MACRO_COUNT;++i) {
-    c+=F("<option value='");c+=String(i);c+=F("'");
-    if (i==tcSettings.macro)c+=F(" selected");
-    c+=F(">");c+=htmlEscape(config.macro[i].name);c+=F("</option>");
-  }
-  c+=F("</select><label>STREAM seul — emission et animation</label><select name='tcStreamMacro'>");
-  for (uint8_t i=0;i<MACRO_COUNT;++i) {
-    c+=F("<option value='");c+=String(i);c+=F("'");
-    if(i==tcSettings.streamMacro)c+=F(" selected");
-    c+=F(">");c+=htmlEscape(config.macro[i].name);c+=F("</option>");
-  }
-  c+=F("</select><label>REC + STREAM — emission et animation</label><select name='tcBothMacro'>");
-  for (uint8_t i=0;i<MACRO_COUNT;++i) {
-    c+=F("<option value='");c+=String(i);c+=F("'");
-    if(i==tcSettings.bothMacro)c+=F(" selected");
-    c+=F(">");c+=htmlEscape(config.macro[i].name);c+=F("</option>");
-  }
-  c+=F("</select><label>Wi-Fi du routeur de regie</label>"
-    "<input name='tcSSID' maxlength='32' value='"
-  );
-  if(config.knownWiFiCount)c+=htmlEscape(config.knownWiFi[0].ssid);
-  c+=F("' placeholder='Nom du Wi-Fi de regie'>"
-    "<label>Mot de passe Wi-Fi</label><input name='tcPassword' type='password' maxlength='64' autocomplete='new-password' placeholder='Vide : conserver celui de ce reseau'>"
-    "<p class='small'>Choisis une emission differente pour chacun des trois cas. "
-    "Personnalise leurs animations dans les reglages des emissions. REC et STREAM arretes : extinction. "
-    "Orange clignotant : connexion ou etats indisponibles. OFF suspend le suivi jusqu'a Reprendre.</p>"
-    "<button type='submit' class='save'>ENREGISTRER LE MODE</button></details></form>");
-  sendHtmlChunk(c);
-  tcSendBanner();
+  c+=F("'><details><summary>Connexion avancee</summary><label>Port TriCaster</label>"
+    "<input name='tcPort' type='number' min='1' max='65535' value='");c+=String(tcSettings.port);
+  c+=F("'></details><p class='small'>Le Wi-Fi du boitier se regle dans <a href='#network'>Connexion reseau</a>.</p>"
+    "<div class='fixed-roles'><a href='/macro?i=1'>REC seul · regler l'animation →</a>"
+    "<a href='/macro?i=2'>STREAM seul · regler l'animation →</a>"
+    "<a href='/macro?i=3'>REC + STREAM · regler l'animation →</a></div>"
+    "<button type='submit' class='save'>ENREGISTRER LA CONNEXION</button></details></form>");sendHtmlChunk(c);
 }
 
 void tcHandleSave() {
-  String mode=server.arg("mode");
-  IPAddress ip;
-  long port=server.arg("tcPort").toInt();
-  long macro=server.arg("tcMacro").toInt();
-  long streamMacro=server.arg("tcStreamMacro").toInt();
-  long bothMacro=server.arg("tcBothMacro").toInt();
-  if ((mode!="manual" && mode!="tricaster") || !server.hasArg("tcMacro") ||
-      !server.hasArg("tcStreamMacro") || !server.hasArg("tcBothMacro") ||
-      !ip.fromString(server.arg("tcIP")) || port<1 || port>65535 || macro<0 || macro>=MACRO_COUNT ||
-      streamMacro<0 || streamMacro>=MACRO_COUNT || bothMacro<0 || bothMacro>=MACRO_COUNT) {
-    server.send_P(400,PSTR("text/plain"),PSTR("Mode, IP, port ou emission invalide"));return;
+  String mode=server.arg("mode");IPAddress ip;long port=server.arg("tcPort").toInt();
+  if((mode!="manual" && mode!="tricaster") || !ip.fromString(server.arg("tcIP")) || port<1 || port>65535){
+    server.send_P(400,PSTR("text/plain"),PSTR("Adresse IP ou port invalide"));return;
   }
   TcRecSettings value=tcSettings;
-  value.enabled=mode=="tricaster";value.macro=macro;value.port=port;
-  value.streamMacro=streamMacro;value.bothMacro=bothMacro;
+  value.enabled=mode=="tricaster";value.port=port;
+  value.macro=1;value.streamMacro=2;value.bothMacro=3;
   for(uint8_t i=0;i<4;++i)value.ip[i]=ip[i];
-  if(!tcSettingsValid(value,MACRO_COUNT)) {
-    server.send_P(400,PSTR("text/plain"),PSTR("Adresse TriCaster invalide"));return;
-  }
-  String ssid=server.arg("tcSSID"),password=server.arg("tcPassword");ssid.trim();
-  if(value.enabled && (ssid.length()==0 || ssid.length()>32 || password.length()>64 ||
-      (password.length()>0 && password.length()<8) || (findKnownWiFi(ssid)<0 && password.length()==0))) {
-    server.send_P(400,PSTR("text/plain"),PSTR("Renseigne le Wi-Fi de regie et son mot de passe s'il n'est pas deja memorise"));return;
-  }
-  if(!tcSaveSettings(value)) {server.send_P(500,PSTR("text/plain"),PSTR("Echec sauvegarde du mode : reglages precedents conserves"));return;}
-  tcResetConnection();tcSettings=value;tcPaused=false;
-  libraryPreviewActive=false;settingsPreviewActive=false;blackout();
-  if(value.enabled) {
-    rememberWiFi(ssid,password);config.externalWiFiEnabled=true;saveConfig();
-    pendingExternalWiFiApply=true;pendingExternalWiFiApplyAt=millis()+EXTERNAL_APPLY_DELAY_MS;
-  }
-  server.sendHeader("Location","/settings#tricaster",true);
-  server.send_P(303,PSTR("text/plain"),PSTR(""));
+  if(!tcSaveSettings(value)){server.send_P(500,PSTR("text/plain"),PSTR("Connexion non enregistree : reglages precedents conserves"));return;}
+  tcResetConnection();tcSettings=value;
+  server.sendHeader("Location","/settings#tricaster",true);server.send_P(303,PSTR("text/plain"),PSTR(""));
 }
 
 void tcSetupRoutes() {
   server.on("/saveTriCaster",HTTP_POST,tcHandleSave);
   server.on("/api/tricaster/status",HTTP_GET,tcStatus);
+  server.on("/usage/mode",HTTP_POST,[](){
+    String mode=server.arg("mode");
+    if(mode!="manual" && mode!="tricaster"){server.send_P(400,PSTR("text/plain"),PSTR("Mode invalide"));return;}
+    bool enable=mode=="tricaster";
+    if(enable && (tcSettings.ip[0]==192 && tcSettings.ip[1]==0 && tcSettings.ip[2]==2)){
+      server.sendHeader("Location","/settings#tricaster",true);server.send_P(303,PSTR("text/plain"),PSTR(""));return;
+    }
+    if(enable && (!config.externalWiFiEnabled || !config.knownWiFiCount)){
+      server.sendHeader("Location","/settings#network",true);server.send_P(303,PSTR("text/plain"),PSTR(""));return;
+    }
+    TcRecSettings value=tcSettings;value.enabled=enable;
+    if(!tcSaveSettings(value)){server.send_P(500,PSTR("text/plain"),PSTR("Mode non enregistre"));return;}
+    tcResetConnection();tcSettings=value;tcPaused=false;
+    // Keep a manual CARAC direct/alert running when changing automatic follow.
+    if(!tcManualOverride)blackout();
+    server.sendHeader("Location","/",true);server.send_P(303,PSTR("text/plain"),PSTR(""));
+  });
+  server.on("/usage/release",HTTP_POST,[](){
+    tcReleaseManual();server.sendHeader("Location","/",true);server.send_P(303,PSTR("text/plain"),PSTR(""));
+  });
   server.on("/tricaster/resume",HTTP_POST,[](){
-    tcPaused=false;tcApplied=-1;
-    server.sendHeader("Location","/",true);
-    server.send_P(303,PSTR("text/plain"),PSTR(""));
+    tcReleaseManual();server.sendHeader("Location","/",true);server.send_P(303,PSTR("text/plain"),PSTR(""));
   });
 }

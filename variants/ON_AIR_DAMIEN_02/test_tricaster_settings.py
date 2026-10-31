@@ -33,7 +33,7 @@ struct FS {
  }
  bool rename(const char* from,const char* to){if(failRename)return false;files[to]=files.at(from);files.erase(from);return true;}
 } LittleFS;
-TcRecSettings defaults={0x54435232UL,0,0,5951,{192,0,2,20},1,2,0,0};
+TcRecSettings defaults={0x54435233UL,0,1,5951,{192,0,2,20},2,3,0,0};
 TcRecSettings tcSettings=defaults;
 bool tcSaveSettings(TcRecSettings& value);
 '''
@@ -45,20 +45,26 @@ int main(){
  tcLoadSettings();assert(!tcSettings.enabled);
  TcRecLegacySettings legacy={0x54435231UL,1,3,5951,{192,0,2,20},0};
  legacy.checksum=configChecksum((const uint8_t*)&legacy,12);store(legacy);
- tcLoadSettings();assert(tcSettings.enabled && tcSettings.macro==3 && tcSettings.streamMacro==1 && tcSettings.bothMacro==2);
+ tcLoadSettings();assert(tcSettings.enabled && tcSettings.macro==1 && tcSettings.streamMacro==2 && tcSettings.bothMacro==3);
  assert(LittleFS.files.at("/tricaster.cfg")->size()==20);
  TcRecSettings saved=tcSettings;tcSettings=defaults;tcLoadSettings();
- assert(tcSettings.macro==3 && tcSettings.checksum==saved.checksum);
- TcRecSettings edited=saved;edited.macro=1;edited.streamMacro=2;edited.bothMacro=0;
+ assert(tcSettings.macro==1 && tcSettings.checksum==saved.checksum);
+ TcRecSettings previousVersion={0x54435232UL,1,0,5951,{192,0,2,20},1,2,0,0};
+ previousVersion.checksum=configChecksum((const uint8_t*)&previousVersion,16);store(previousVersion);
+ tcSettings=defaults;tcLoadSettings();
+ assert(tcSettings.enabled && tcSettings.macro==1 && tcSettings.streamMacro==2 && tcSettings.bothMacro==3);
+ assert(tcSettings.ip[3]==20 && tcSettings.port==5951 && tcSettings.magic==0x54435233UL);
+ TcRecSettings edited=saved;edited.port=5952;
  assert(tcSaveSettings(edited));tcSettings=defaults;tcLoadSettings();
- assert(tcSettings.macro==1 && tcSettings.streamMacro==2 && tcSettings.bothMacro==0);
+ assert(tcSettings.macro==1 && tcSettings.streamMacro==2 && tcSettings.bothMacro==3 && tcSettings.port==5952);
  auto previous=*LittleFS.files.at("/tricaster.cfg");
- LittleFS.failRename=true;edited.macro=3;assert(!tcSaveSettings(edited));
+ LittleFS.failRename=true;edited.port=5953;assert(!tcSaveSettings(edited));
  assert(*LittleFS.files.at("/tricaster.cfg")==previous);LittleFS.failRename=false;
+ edited.macro=0;assert(!tcSaveSettings(edited));assert(*LittleFS.files.at("/tricaster.cfg")==previous);
  (*LittleFS.files.at("/tricaster.cfg"))[8]^=1;tcSettings=defaults;tcLoadSettings();assert(!tcSettings.enabled);
  legacy.checksum^=1;store(legacy);tcSettings=defaults;tcLoadSettings();assert(!tcSettings.enabled);
  saved.streamMacro=4;assert(!tcSettingsValid(saved,4));saved.streamMacro=0;saved.bothMacro=4;assert(!tcSettingsValid(saved,4));
- puts("PASS: real settings I/O; legacy REC migration, three assignments, checksum rejection and atomic save failure preserve settings");
+ puts("PASS: real settings I/O; old role mappings corrected, network retained, manual role protected, checksums and atomic save failure");
 }
 '''
 with tempfile.TemporaryDirectory() as temp:

@@ -94,11 +94,13 @@ static_assert(sizeof(TcRecLegacySettings)==16,"Legacy REC-only layout");
 
 inline bool tcSettingsValid(const TcRecSettings& s, uint8_t macroCount);
 inline bool tcSettingsValid(const TcRecSettings& s, uint8_t macroCount) {
-  return s.magic==0x54435232UL && s.enabled<=1 && s.macro<macroCount &&
-    s.streamMacro<macroCount && s.bothMacro<macroCount && s.reserved==0 && s.port!=0 &&
+  return s.magic==0x54435233UL && s.enabled<=1 && macroCount==4 && s.macro==1 &&
+    s.streamMacro==2 && s.bothMacro==3 && s.reserved==0 && s.port!=0 &&
     s.ip[0]>0 && s.ip[0]<224 && s.ip[0]!=127 &&
     (s.ip[0]!=255 || s.ip[1]!=255 || s.ip[2]!=255 || s.ip[3]!=255);
 }
+
+inline bool tcManualAllowed(uint8_t index) { return index==0; }
 
 // A single known flag cannot distinguish REC-only from REC+STREAM.
 // Keep the output unknown until both independent states have been received.

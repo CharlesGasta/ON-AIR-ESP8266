@@ -34,7 +34,7 @@
 #include <Updater.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.6.1 STUDIO TRICASTER REC STREAM 36LED 100PCT"
+#define FIRMWARE_VERSION "3.7.0 CARAC MANUEL TRICASTER AUTO 36LED"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -1706,11 +1706,13 @@ static_assert(sizeof(TcRecLegacySettings)==16,"Legacy REC-only layout");
 
 inline bool tcSettingsValid(const TcRecSettings& s, uint8_t macroCount);
 inline bool tcSettingsValid(const TcRecSettings& s, uint8_t macroCount) {
-  return s.magic==0x54435232UL && s.enabled<=1 && s.macro<macroCount &&
-    s.streamMacro<macroCount && s.bothMacro<macroCount && s.reserved==0 && s.port!=0 &&
+  return s.magic==0x54435233UL && s.enabled<=1 && macroCount==4 && s.macro==1 &&
+    s.streamMacro==2 && s.bothMacro==3 && s.reserved==0 && s.port!=0 &&
     s.ip[0]>0 && s.ip[0]<224 && s.ip[0]!=127 &&
     (s.ip[0]!=255 || s.ip[1]!=255 || s.ip[2]!=255 || s.ip[3]!=255);
 }
+
+inline bool tcManualAllowed(uint8_t index) { return index==0; }
 
 // A single known flag cannot distinguish REC-only from REC+STREAM.
 // Keep the output unknown until both independent states have been received.
@@ -1726,11 +1728,12 @@ inline int tcSelectedMacro(const TcRecSettings& s, bool recKnown, bool streamKno
 
 
 
-TcRecSettings tcSettings = {0x54435232UL,0,0,5951,{192,0,2,1},1,2,0,0};
+TcRecSettings tcSettings = {0x54435233UL,0,1,5951,{192,0,2,1},2,3,0,0};
 WiFiClient tcClient;
 TcRecParser tcParser;
 bool tcKnown=false, tcRecording=false, tcPaused=false;
 bool tcRecKnown=false, tcStreamKnown=false, tcStreaming=false;
+bool tcManualOverride=false;
 uint32_t tcLastAttempt=0, tcConnectedAt=0, tcHeartbeatAt=0;
 uint32_t tcUpdates=0;
 int tcApplied=-1;
@@ -1743,6 +1746,8 @@ void tcSendSettings();
 void tcSendBanner();
 void tcSetupRoutes();
 bool tcSaveSettings(TcRecSettings& value);
+void tcReleaseManual();
+void tcSendAutomaticCard(uint8_t index);
 
 // END TRICASTER STATE
 
@@ -2988,6 +2993,10 @@ button{display:inline-flex;align-items:center;justify-content:center;gap:8px;bor
 
 .library-entry{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:78px;color:var(--text);text-decoration:none;font-size:16px;font-weight:550}.library-entry>span:last-child{font-size:24px;font-weight:400;color:var(--muted)}.library-entry:active{opacity:.7}.animation-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 0;border-bottom:1px solid var(--line)}.animation-row:last-child{border-bottom:0;padding-bottom:0}.animation-emission{display:flex;align-items:center;gap:12px;min-width:0}.animation-emission>span{font-size:15px;font-weight:550;letter-spacing:-.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.animation-logo{width:38px;height:38px;object-fit:contain;border-radius:10px;flex-shrink:0}.animation-actions{display:flex;gap:8px;flex-shrink:0}.animation-actions a{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:10px 12px;border-radius:14px;font-size:13px;font-weight:550;text-decoration:none;line-height:1.2}.animation-actions a>span{font-size:15px;opacity:.55}.animation-direct{background:#edf0fa;color:#455b94}.animation-alert{background:#fff1da;color:#956317}[data-theme=dark] .animation-direct{background:#282f44;color:#bdccee}[data-theme=dark] .animation-alert{background:#3a3021;color:#efc584}.animation-actions a:active{opacity:.7}.editor-link .save{align-items:center;justify-content:center;text-align:center;padding:12px 16px;line-height:1.4}
 @media(max-width:380px){.animation-row{gap:10px}.animation-emission{gap:9px}.animation-emission>span{font-size:13px}.animation-logo{width:30px;height:30px}.animation-actions{gap:6px}.animation-actions a{padding:10px 11px;gap:7px;font-size:12px}}
+
+.control .macro-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.manual-card,.usage-panel,.role-heading{grid-column:1/-1}.usage-panel{display:grid;grid-template-columns:1fr auto;gap:12px;padding:22px;border:1px solid var(--line);border-radius:26px;background:var(--panel)}.usage-panel h2{margin:5px 0;font-size:22px}.usage-panel p{margin:8px 0;color:var(--muted)}.eyebrow,.manual-label{font-size:10px;font-weight:650;letter-spacing:.09em;color:var(--muted)}.usage-switch{display:flex;gap:6px;align-items:center}.usage-switch button{background:var(--wash,#edf0f5);font-size:12px}.usage-switch button[aria-pressed=true]{background:#3373e8;color:white}.manual-label{padding:18px 18px 0;color:#6680bd}.manual-card .actions{max-width:600px}.automatic-card .macrohead{padding-bottom:8px}.automatic-card h2{font-size:18px}.automatic-state{padding:2px 18px 18px;color:var(--muted);font-size:13px}.automatic-card[data-active=true] .automatic-state{color:#63ad86}.profile-link{display:block;padding:0 18px 18px;text-decoration:none;font-size:12px;color:var(--muted)}.release-row{padding:0 18px 18px}.release-row button,.resume-button{font-size:12px}.role-heading{margin:8px 0 0;font-size:18px;font-weight:600}.fixed-roles{display:grid;gap:10px;margin:18px 0}.fixed-roles a{color:inherit}.usage-panel form{margin:0}
+@media(max-width:680px){.control .macro-grid{grid-template-columns:1fr}.usage-panel{grid-template-columns:1fr}.usage-switch{flex-wrap:wrap}.usage-switch button{min-height:42px}.automatic-card .macrohead{padding-top:16px}}
+
 )CSS";
 
 
@@ -3025,6 +3034,15 @@ function renderStatus(){
   bar.textContent=connected&&s.alert_running?'Alerte en cours':'';
   for(let i=0;i<4;i++){
     const card=el('macro-'+i),d=el('direct-'+i),a=el('alert-'+i);
+    if(i>0){
+      const expected=connected&&s&&s.tc_ready?(s.tc_rec&&s.tc_stream?3:s.tc_rec?1:s.tc_stream?2:-1):-1;
+      const visible=!!(connected&&s.output_enabled&&s.active_macro===i);
+      card.dataset.active=String(visible);
+      const label=el('auto-state-'+i);
+      label.textContent=!connected?'Connexion au boitier perdue':!s.tc_mode?'Suivi desactive':s.tc_paused?'Suivi suspendu':!s.tc_ready?'Connexion TriCaster en attente':expected===i?(s.manual_priority?'En cours · priorite CARAC':'Actif'):'Arrete';
+      continue;
+    }
+    const release=el('carac-release');if(release)release.hidden=!(connected&&s.tc_mode&&s.manual_priority);
     const live=!!(connected&&s.output_enabled&&!s.alert_running&&s.active_macro===i);
     const alert=!!(connected&&s.alert_running&&s.alert_macro===i);
     card.dataset.active=String(live);card.dataset.alert=String(alert);
@@ -3034,8 +3052,8 @@ function renderStatus(){
     d.style.background=live?d.dataset.color:'';d.style.color=live?textColor(d.dataset.color):'';
     el('direct-label-'+i).textContent=live?'En direct':'Direct';el('alert-label-'+i).textContent=alert?'Alerte…':'Alerte';
     d.setAttribute('aria-label',live?'Quitter le direct':'Direct');
-    d.disabled=!connected||commandBusy||s.alert_running||(s.output_enabled&&s.active_macro!==i);
-    a.disabled=!connected||commandBusy||s.alert_running||s.output_enabled;
+    d.disabled=!connected||commandBusy||s.alert_running;
+    a.disabled=!connected||commandBusy||s.alert_running||(s.output_enabled&&s.active_macro===0);
 
   }
 }
@@ -3138,6 +3156,7 @@ void sendControlPage() {
   // Chaque macro est envoyee separement.
   // La RAM necessaire reste donc tres faible et constante.
   for (uint8_t i = 0; i < MACRO_COUNT; i++) {
+    if(i>0){if(i==1)sendHtmlFlash(PSTR("<h2 class='role-heading'>TriCaster automatique</h2>"));tcSendAutomaticCard(i);continue;}
     MacroConfig& m = config.macro[i];
 
     String directColor = rgbToHex(m.r,m.g,m.b);
@@ -3145,13 +3164,13 @@ void sendControlPage() {
 
     chunk.reserve(1500);
 
-    chunk = F("<section class='card' id='macro-");
+    chunk = F("<section class='card manual-card' id='macro-");
     chunk += String(i);
     chunk += F("' style='--channel:");
     chunk += directColor;
     chunk += F(";--wash:");
     chunk += directColor;
-    chunk += F("16'><div class='macrohead'>");
+    chunk += F("16'><div class='manual-label'>MANUEL · PRIORITAIRE</div><div class='macrohead'>");
 
     if (logoAvailable(i)) {
       chunk += F("<img class='logo' src='/logo?i=");
@@ -3197,7 +3216,7 @@ void sendControlPage() {
     chunk += String(i);
     chunk += F("'>Alerte</span></button>");
 
-    chunk += F("</div></section>");
+    chunk += F("</div><form id='carac-release' class='release-row' method='POST' action='/usage/release' hidden><button type='submit'>Rendre la main au TriCaster</button></form></section>");
 
     server.sendContent(chunk);
     chunk = F("");
@@ -3467,6 +3486,7 @@ async function saveNow(){
 }
 
 function preview(state){
+  if(!hardwarePreviewAllowed)return;
   clearTimeout(previewTimer);
   pendingPreview=state;
   previewTimer=setTimeout(flushPreview,100);
@@ -3521,6 +3541,7 @@ function updateAnimationHelp(){
 }
 
 async function testAlert(){
+  if(!hardwarePreviewAllowed)return;
   if(!await saveNow())return;
   let r;
   try{r=await macroRequest('/api/alertTest?i='+macroIndex);}
@@ -3609,8 +3630,8 @@ void sendSettingsPage() {
     "<a class='iconbtn' href='/'>← Console</a></header>"
     "<main class='wrap'>"
     ""
-    "<nav class='jumpnav' aria-label='Rubriques'><a href='#macros'>Émissions</a>"
-    "<a href='#tricaster'>Mode</a><a href='#animations'>Éditeur d’animation</a><a href='#general'>Boîtier</a><a href='#network'>Wi-Fi</a><a href='#system'>Système</a></nav>");
+    "<nav class='jumpnav' aria-label='Rubriques'><a href='#macros'>Profils</a>"
+    "<a href='#tricaster'>TriCaster</a><a href='#animations'>Éditeur d’animation</a><a href='#general'>Boîtier</a><a href='#network'>Reseau</a><a href='#system'>Système</a></nav>");
   sendHtmlChunk(c);
   c = F("");
   tcSendSettings();
@@ -3618,7 +3639,7 @@ void sendSettingsPage() {
     "<button type='button' data-theme-choice='light' onclick=\"setTheme('light')\" aria-pressed='false'>☀ Clair</button>"
     "<button type='button' data-theme-choice='dark' onclick=\"setTheme('dark')\" aria-pressed='false'>☾ Sombre</button></div></section>"));
   sendHtmlFlash(PSTR(
-    "<section id='macros' class='section settings-macros'><h2>Vos émissions</h2>"
+    "<section id='macros' class='section settings-macros'><h2>Profils lumineux</h2>"
     "<div class='small' style='margin-bottom:12px'>"
     ""
     "</div>"
@@ -3648,7 +3669,8 @@ void sendSettingsPage() {
     c += String(m.intensity);
     c += F("%");
 
-    if (m.idleOff) {
+    if(i>0){c+=F(" · TriCaster uniquement");}
+    else if (m.idleOff) {
       c += F(" · HORS DIRECT eteint");
     } else {
       c += F(" · HORS DIRECT ");
@@ -3853,7 +3875,7 @@ void sendMacroSettingsPage(uint8_t i) {
   }
 
   c += F("<div id='autosave' class='autosave' role='status' aria-live='polite'>Tous les réglages sont enregistrés</div>");
-  c += F("<label>Nom de l’émission</label><input id='macroName' maxlength='24' value='");
+  c += F("<label>Nom du profil</label><input id='macroName' maxlength='24' value='");
   c += htmlEscape(String(m.name));
   c += F("' oninput='scheduleSave()'>");
 
@@ -3862,7 +3884,7 @@ void sendMacroSettingsPage(uint8_t i) {
 
   c.reserve(2100);
   c = F("<section class='fieldgroup'>");
-  c += F("<h3>En direct</h3><p>La signature lumineuse de cette émission.</p><div class='grid2'>");
+  c += i==0?F("<h3>CARAC manuel</h3><p>Couleur et animation de la commande manuelle prioritaire.</p><div class='grid2'>"):F("<h3>Animation automatique</h3><p>Ce profil est declenche uniquement par le TriCaster. Les reglages ne declenchent aucun test physique.</p><div class='grid2'>");
   c += F("<div><label>Couleur DIRECT</label><input id='directColor' type='color' value='");
   c += rgbToHex(m.r,m.g,m.b);
   c += F("' oninput=\"preview('direct');scheduleSave()\" onchange='saveNow()'></div>");
@@ -3895,6 +3917,7 @@ void sendMacroSettingsPage(uint8_t i) {
 
   c.reserve(2200);
   c = F("<section class='fieldgroup'>");
+  if(i>0)sendHtmlFlash(PSTR("<div hidden>"));
   c += F("<h3>Hors direct</h3><label>");
   c += F("<input id='idleOff' type='checkbox' style='width:auto;margin-right:8px'");
 
@@ -3976,6 +3999,7 @@ void sendMacroSettingsPage(uint8_t i) {
   c = F("");
 
   c.reserve(2000);
+  if(i>0)sendHtmlFlash(PSTR("</div>"));
   c = F("<div class='filebox' style='margin-top:16px'><label style='margin-top:0'>Logo PNG / JPG</label>");
 
   if (logoAvailable(i)) {
@@ -4007,7 +4031,7 @@ void sendMacroSettingsPage(uint8_t i) {
 
   c = F("<script>const macroIndex=");
   c += String(i);
-  c += F(";</script>");
+  c += F(";const hardwarePreviewAllowed=");c+=(i==0&&(!tcControlActive()||tcManualOverride))?"true":"false";c+=F(";</script>");
   sendHtmlChunk(c);
 
   c=String();
@@ -4027,7 +4051,7 @@ void sendMacroSettingsPage(uint8_t i) {
 
 String statusJSON() {
   String j;
-  j.reserve(260);
+  j.reserve(440);
 
   j = "{";
 
@@ -4059,6 +4083,12 @@ String statusJSON() {
   }
   j += "\"";
 
+  j += F(",\"tc_mode\":");j+=tcControlActive()?"true":"false";
+  j += F(",\"manual_priority\":");j+=tcManualOverride?"true":"false";
+  j += F(",\"tc_paused\":");j+=tcPaused?"true":"false";
+  j += F(",\"tc_ready\":");j+=(tcKnown&&tcClient.connected()&&WiFi.status()==WL_CONNECTED)?"true":"false";
+  j += F(",\"tc_rec\":");j+=(tcRecKnown&&tcRecording)?"true":"false";
+  j += F(",\"tc_stream\":");j+=(tcStreamKnown&&tcStreaming)?"true":"false";
   j += "}";
 
   return j;
@@ -4085,13 +4115,14 @@ void sendStatusResponse() {
 }
 
 void handleDirect() {
-  if(tcControlActive()){server.send_P(409,PSTR("text/plain"),PSTR("Mode TriCaster actif : repasse en mode Manuel pour cette commande"));return;}
   uint8_t i;
 
   if (!parseMacroIndex(i)) {
     server.send_P(400,PSTR("application/json"),PSTR("{\"error\":\"macro invalide\"}"));
     return;
   }
+
+  if(!tcManualAllowed(i)){server.send_P(403,PSTR("text/plain"),PSTR("Ce profil est commande uniquement par le TriCaster"));return;}
 
   // Ne permet aucune commande DIRECT pendant une alerte.
   if (alertRunning) {
@@ -4102,24 +4133,25 @@ void handleDirect() {
 
   // Appui sur le DIRECT deja actif = retour HORS DIRECT.
   if (outputEnabled && activeMacro == i) {
-    applyMacroIdle(i);
+    if(tcControlActive())tcReleaseManual();else {tcManualOverride=false;applyMacroIdle(i);}
     sendStatusResponse();
     return;
   }
 
   // Une autre macro est deja active : verrouillage.
-  if (outputEnabled && activeMacro >= 0 && activeMacro != i) {
+  if (outputEnabled && activeMacro == 0 && activeMacro != i) {
     Serial.println(F("[MACRO] DIRECT refuse : une autre macro est active"));
     sendStatusResponse();
     return;
   }
 
+  tcManualOverride=true;
+  tcPaused=false;
   applyMacro(i);
   sendStatusResponse();
 }
 
 void handleAlert() {
-  if(tcControlActive()){server.send_P(409,PSTR("text/plain"),PSTR("Mode TriCaster actif : repasse en mode Manuel pour cette commande"));return;}
   uint8_t i;
 
   if (!parseMacroIndex(i)) {
@@ -4127,13 +4159,17 @@ void handleAlert() {
     return;
   }
 
+  if(!tcManualAllowed(i)){server.send_P(403,PSTR("text/plain"),PSTR("Ce profil est commande uniquement par le TriCaster"));return;}
+
   // Une alerte ne peut etre lancee que lorsque le ON AIR est eteint.
-  if (alertRunning || outputEnabled) {
+  if (alertRunning || (outputEnabled && activeMacro==0)) {
     Serial.println(F("[MACRO] ALERTE refusee : sortie deja active"));
     sendStatusResponse();
     return;
   }
 
+  tcManualOverride=true;
+  tcPaused=false;
   startAlert(i);
   sendStatusResponse();
 }
@@ -4146,6 +4182,8 @@ void handleAlertTest() {
     server.send_P(400,PSTR("application/json"),PSTR("{\"error\":\"macro invalide\"}"));
     return;
   }
+
+  if(!tcManualAllowed(i)){server.send_P(403,PSTR("text/plain"),PSTR("Ce profil est commande uniquement par le TriCaster"));return;}
 
   // On refuse seulement si un vrai DIRECT est actuellement actif.
   // Apres un test, le boitier revient automatiquement TOUT ETEINT.
@@ -4751,6 +4789,8 @@ void handleMacroPreview() {
     return;
   }
 
+  if(!tcManualAllowed(idx) || (tcControlActive()&&!tcManualOverride)){server.send_P(403,PSTR("text/plain"),PSTR("Apercu physique reserve au profil CARAC manuel"));return;}
+
   // L'apercu travaille en RAM pour rester fluide :
   // l'EEPROM est ecrite seulement par l'autosave.
   updateMacroFromRequest(
@@ -4875,6 +4915,7 @@ void handleLogo() {
 }
 
 void handleStartupTest() {
+  if(tcControlActive()){server.send_P(403,PSTR("text/plain"),PSTR("Arrete le suivi TriCaster avant le test de demarrage"));return;}
   if(outputEnabled||alertRunning){server.send_P(409,PSTR("application/json"),PSTR("{\"ok\":false,\"reason\":\"live\"}"));return;}
   server.send_P(200,PSTR("application/json"),PSTR("{\"ok\":true}"));
   startupTestActive=true;startupAnimation();
@@ -5420,6 +5461,7 @@ void updateLibraryPreview(){
   showMotionFrame(frame);
 }
 void handleLibraryPreview(){
+  if(tcControlActive()){server.send_P(403,PSTR("text/plain"),PSTR("Suivi TriCaster actif : simulation dans l editeur uniquement"));return;}
   String token=server.arg("token");
   if(!token.length()||token.length()>40){server.send_P(400,PSTR("text/plain"),PSTR("Session invalide"));return;}
   if(libraryPreviewActive&&!settingsPreviewActive){strncpy(libraryPreviewRevokedToken,libraryPreviewToken,40);libraryPreviewActive=false;libraryPreviewToken[0]=0;customOwner=-1;}
@@ -5451,6 +5493,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 .board{height:auto;min-height:150px;aspect-ratio:3.3;margin:38px 16px;width:calc(100% - 32px);background:#101114;border:1px solid #30323b;border-radius:20px;isolation:isolate}.board #diffuser{position:absolute;left:5%;top:50%;width:90%;height:auto;aspect-ratio:960/260;translate:0 -50%;pointer-events:none;z-index:0}.board .led,.board .led:active,.board .led:hover{width:28px;height:28px;min-height:28px;padding:0;border:0;background:transparent!important;border-radius:50%;transform:none!important;translate:-50% -50%;transition:none;z-index:3;box-shadow:none;touch-action:manipulation}.board .led:after{content:'';position:absolute;inset:6px;border-radius:50%;background:var(--led);border:1px solid #aab0c2;box-shadow:0 0 7px var(--led);pointer-events:none}.board .led[aria-pressed=true]{outline:none}.board .led[aria-pressed=true]:after{outline:2px solid #7599ff;outline-offset:2px}.board .led:focus-visible{outline:2px solid white;outline-offset:0}#palette{gap:8px;flex:1}#palette button{width:30px;min-height:30px;padding:0}#intensityValue{float:right;font-variant-numeric:tabular-nums}#bank{width:min(560px,calc(100% - 28px));max-height:80vh;overflow:auto;padding:22px;border:1px solid var(--line);border-radius:24px;background:var(--panel);color:var(--text)}#bank::backdrop{background:#0008;backdrop-filter:blur(5px)}#bank h3{font-size:14px;color:var(--muted);margin:20px 0 8px}.bank-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}.bank-row>span{min-width:0;overflow-wrap:anywhere}.bank-row button{font-size:12px;min-height:36px;padding:8px 12px;background:var(--bg);color:var(--text);white-space:nowrap}.library-copy{font-size:12px;background:transparent;color:var(--muted);padding:8px;min-height:36px}.editor [hidden]{display:none!important}
 </style><main class="editor"><a id="back" href="/settings">← Retour</a><h1>Éditeur d’animation</h1><section class="section editor-meta"><label for="animationName">Nom de l’animation</label><input id="animationName" type="text" maxlength="32" placeholder="Ex. Alerte studio" autocomplete="off"><div class="editor-toolbar"><label class="preview-switch"><input id="physicalPreview" type="checkbox" role="switch"><span>Aperçu sur le boîtier</span></label><button id="save" class="primary">Enregistrer</button></div><p class="status" id="status" role="status" aria-live="polite"></p></section><div class="board" id="board"><canvas id="diffuser" aria-label="Simulation lumineuse ON AIR"></canvas></div><div class="bar" id="groups"></div><div class="playbar"><button id="play">Lire la séquence</button></div><section class="section"><div class="bar"><input aria-label="Couleur des LED sélectionnées" id="color" type="color" value="#ff0000"><div class="bar" id="palette"></div></div><label for="animationIntensity">Intensité de la séquence <output id="intensityValue">100 %</output></label><input id="animationIntensity" type="range" min="0" max="100" value="100"><p class="small" id="selection"></p><div class="grid2"><div><label for="cueKind">Outil de cette étape</label><select id="cueKind"><option value="pixels">Couleurs LED</option><option value="chase">Chenillard</option><option value="strobe">Flash / strobe</option></select></div><div id="speedGroup" hidden><label for="effectSpeed">Intervalle (ms)</label><input id="effectSpeed" type="number" min="20" max="10000" step="10" value="100"></div><div id="startGroup" hidden><label for="chaseStart">LED de départ</label><input id="chaseStart" type="number" min="1" max="36" value="1"></div><div id="endGroup" hidden><label for="chaseEnd">LED d’arrivée</label><input id="chaseEnd" type="number" min="1" max="36" value="36"></div></div><button id="applyMask" hidden>Appliquer aux LED sélectionnées</button><div class="cues" id="cues"></div><div class="bar"><button id="add">+ Étape</button><button id="duplicate">Dupliquer</button><button id="remove">Supprimer</button><button id="earlier" aria-label="Déplacer avant">←</button><button id="later" aria-label="Déplacer après">→</button></div><div class="grid2"><div><label for="hold">Maintien (secondes)</label><input id="hold" type="number" min="0.1" max="60" step="0.1" value="1"></div><div><label for="transition">Transition vers cette étape</label><select id="transition"><option value="cut">Directe</option><option value="fade">Fondu</option></select></div><div><label for="fade">Fondu (secondes)</label><input id="fade" type="number" min="0.1" max="20" step="0.1" value="1" disabled></div></div><p class="small">12 étapes maximum · Maintien et fondu par étape.</p><div class="bar"><button id="bankOpen">Banque</button><button id="export">Exporter</button><button id="import">Importer</button><input id="file" type="file" accept=".onair" hidden></div></section><section class="section"><div class="library-heading"><h2>Mes animations <span id="libraryCount"></span></h2><button id="newAnimation">+ Nouvelle</button></div><div id="libraryList"></div><p class="small">Disponibles dans les menus Direct et Alerte de toutes les émissions.</p></section></main><dialog id="bank"><div class="library-heading"><h2>Banque d’animations</h2><button id="bankClose" aria-label="Fermer la banque">×</button></div><h3>Modèles</h3><div id="templateList"></div><h3>Mes animations</h3><div id="bankSaved"></div></dialog><script>
 'use strict';
+const physicalToggle=document.getElementById('physicalPreview');physicalToggle.disabled=true;fetch('/api/tricaster/status',{cache:'no-store'}).then(r=>r.json()).then(s=>{physicalToggle.disabled=s.mode==='tricaster';if(physicalToggle.disabled){physicalToggle.checked=false;physicalToggle.parentElement.querySelector('span').textContent='Simulation uniquement · suivi TriCaster';}}).catch(()=>{});
 const $=id=>document.getElementById(id),makeToken=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
 let token=makeToken(),previewVersion=0,previewReady=false,previewBusy=false,previewPending=false,previewMisses=0;
 $('back').href='/settings#animations';
@@ -5637,6 +5680,7 @@ void handleCustomSave(){
 }
 void handleCustomTest(){
   uint8_t i;if(!parseMacroIndex(i)){server.send_P(400,PSTR("text/plain"),PSTR("Émission invalide"));return;}
+  if(!tcManualAllowed(i) || tcControlActive()){server.send_P(403,PSTR("text/plain"),PSTR("Profil automatique : simulation dans l editeur uniquement"));return;}
   if(outputEnabled||alertRunning){server.send_P(409,PSTR("text/plain"),PSTR("Arrêtez le direct avant le test"));return;}
   bool alert=server.arg("kind")=="alert";
   if(!loadCustom(i+(alert?MACRO_COUNT:0))){server.send_P(400,PSTR("text/plain"),PSTR("Enregistrez une animation"));return;}
@@ -6118,7 +6162,7 @@ void tcLoadSettings() {
     f.close();
     if(valid && old.magic==0x54435231UL && old.enabled<=1 && old.macro<MACRO_COUNT && old.port &&
        old.checksum==configChecksum((const uint8_t*)&old,12)) {
-      saved=tcSettings;saved.enabled=old.enabled;saved.macro=old.macro;saved.port=old.port;
+      saved=tcSettings;saved.enabled=old.enabled;saved.port=old.port;
       memcpy(saved.ip,old.ip,4);
       if(tcSettingsValid(saved,MACRO_COUNT)) {tcSettings=saved;tcSaveSettings(tcSettings);}
     }
@@ -6126,11 +6170,16 @@ void tcLoadSettings() {
   }
   bool ok=f.size()==sizeof(saved) && f.read((uint8_t*)&saved,sizeof(saved))==sizeof(saved);
   f.close();
-  if (ok && tcSettingsValid(saved,MACRO_COUNT) && saved.checksum==configChecksum((const uint8_t*)&saved,16)) tcSettings=saved;
+  if(ok && saved.magic==0x54435232UL && saved.enabled<=1 && saved.checksum==configChecksum((const uint8_t*)&saved,16)) {
+    saved.magic=0x54435233UL;saved.macro=1;saved.streamMacro=2;saved.bothMacro=3;saved.reserved=0;
+    if(tcSettingsValid(saved,MACRO_COUNT)){tcSettings=saved;tcSaveSettings(tcSettings);}
+  }
+  else if (ok && tcSettingsValid(saved,MACRO_COUNT) && saved.checksum==configChecksum((const uint8_t*)&saved,16)) tcSettings=saved;
   else Serial.println(F("[TRICASTER] Configuration invalide : mode manuel conserve"));
 }
 
 bool tcSaveSettings(TcRecSettings& value) {
+  if(!tcSettingsValid(value,MACRO_COUNT))return false;
   value.checksum=configChecksum((const uint8_t*)&value,16);
   File f=LittleFS.open("/tricaster.tmp","w");
   if (!f) return false;
@@ -6146,12 +6195,19 @@ void tcResetConnection() {
 }
 
 void tcPause() {
+  tcManualOverride=false;
   if (!tcControlActive()) return;
   tcPaused=true; tcApplied=-1;
   Serial.println(F("[TRICASTER] Suivi REC/STREAM suspendu par OFF"));
 }
 
+void tcReleaseManual() {
+  tcManualOverride=false;tcPaused=false;tcApplied=-1;
+  blackout();
+}
+
 const char* tcStatusText() {
+  if(tcManualOverride) return "CARAC : priorite manuelle";
   if (!tcControlActive()) return "Mode manuel";
   if (tcPaused) return "Suivi REC/STREAM suspendu par OFF";
   if (WiFi.status()!=WL_CONNECTED) return "TriCaster : attente du Wi-Fi";
@@ -6228,7 +6284,7 @@ void tcUpdate() {
       tcHeartbeatAt=now;tcClient.print('\n');
     }
   }
-  if (!startupSequenceComplete || settingsPreviewActive || libraryPreviewActive || tcPaused) return;
+  if (!startupSequenceComplete || settingsPreviewActive || libraryPreviewActive || tcPaused || tcManualOverride) return;
   if (!tcKnown || !tcClient.connected() || WiFi.status()!=WL_CONNECTED) {
     if (tcApplied!=2) { blackout();tcApplied=2; }
     static uint32_t lastErrorFrame=0;
@@ -6246,104 +6302,91 @@ void tcUpdate() {
   }
 }
 
+
+
 void tcSendBanner() {
-  if (!tcControlActive()) return;
-  String c=F("<section class='section' style='margin:12px 0'><b id='tcLiveStatus'>");
+  String c=F("<section class='usage-panel'><div><span class='eyebrow'>PILOTAGE</span><h2>CARAC garde la priorite</h2>"
+    "<p id='tcLiveStatus' role='status'>");
   c+=tcStatusText();
-  c+=F("</b><p><a href='/settings#tricaster'>Mode et reglages TriCaster</a></p>"
-    "<form method='POST' action='/tricaster/resume'><button type='submit'>Reprendre le suivi REC / STREAM</button></form></section>"
-    "<script>setInterval(function(){fetch('/api/tricaster/status',{cache:'no-store'}).then(r=>r.json()).then(s=>{var e=document.getElementById('tcLiveStatus');if(e)e.textContent=s.message}).catch(()=>{})},2000)</script>");
+  c+=F("</p></div><div class='usage-switch'><form method='POST' action='/usage/mode'>"
+    "<input type='hidden' name='mode' value='manual'><button type='submit' aria-pressed='");
+  c+=tcControlActive()?"false":"true";
+  c+=F("'>CARAC uniquement</button></form><form method='POST' action='/usage/mode'>"
+    "<input type='hidden' name='mode' value='tricaster'><button type='submit' aria-pressed='");
+  c+=tcControlActive()?"true":"false";
+  c+=F("'>CARAC + TriCaster</button></form></div><a class='small' href='/settings#tricaster'>Regler la connexion TriCaster →</a>");
+  if(tcControlActive()) c+=F("<form method='POST' action='/tricaster/resume'><button type='submit' class='resume-button'>Reprendre le suivi automatique</button></form>");
+  c+=F("</section><script>setInterval(function(){fetch('/api/tricaster/status',{cache:'no-store'}).then(r=>r.json()).then(s=>{const e=document.getElementById('tcLiveStatus');if(e)e.textContent=s.message}).catch(()=>{})},2000)</script>");
   sendHtmlChunk(c);
+}
+
+void tcSendAutomaticCard(uint8_t i) {
+  String c=F("<section class='card automatic-card' id='macro-");c+=String(i);
+  c+=F("'><div class='macrohead'>");
+  if(logoAvailable(i)){c+=F("<img class='logo' alt='' src='/logo?i=");c+=String(i);c+=F("'>");}
+  c+=F("<div class='mname'><span class='eyebrow'>TRICASTER UNIQUEMENT</span><h2>");
+  c+=i==1?F("REC"):i==2?F("STREAM"):F("REC + STREAM");
+  c+=F("</h2></div></div><div class='automatic-state' id='auto-state-");c+=String(i);
+  c+=F("' role='status'>Etat en attente</div><a class='profile-link' href='/macro?i=");c+=String(i);
+  c+=F("'>Regler l'animation →</a></section>");sendHtmlChunk(c);
 }
 
 void tcSendSettings() {
-  String c=F("<form method='POST' action='/saveTriCaster'><details id='tricaster' class='section' open>"
-    "<summary>Mode de fonctionnement</summary><label>Mode</label><select name='mode'>"
-    "<option value='manual'");
-  if (!tcControlActive()) c+=F(" selected");
-  c+=F(">Manuel</option><option value='tricaster'");
-  if (tcControlActive()) c+=F(" selected");
-    c+=F(">TriCaster — REC / STREAM</option></select>"
-    "<p class='small'>Le boitier suit l'enregistrement et la diffusion sans commander le TriCaster.</p>"
-    "<label>Adresse IP du TriCaster</label><input name='tcIP' required value='");
+  String c=F("<form method='POST' action='/saveTriCaster'><details id='tricaster' class='section'>"
+    "<summary>TriCaster — connexion automatique</summary>"
+    "<p>REC, STREAM et REC + STREAM sont declenches uniquement par le TriCaster. "
+    "Les commandes CARAC restent prioritaires.</p><input type='hidden' name='mode' value='");
+  c+=tcControlActive()?"tricaster":"manual";
+  c+=F("'><label>Adresse IP du TriCaster</label><input name='tcIP' required value='");
   c+=IPAddress(tcSettings.ip[0],tcSettings.ip[1],tcSettings.ip[2],tcSettings.ip[3]).toString();
-  c+=F("'><label>Port de connexion</label><input name='tcPort' type='number' min='1' max='65535' value='");
-  c+=String(tcSettings.port);
-  c+=F("'><label>REC seul — emission et animation</label><select name='tcMacro'>");
-  for (uint8_t i=0;i<MACRO_COUNT;++i) {
-    c+=F("<option value='");c+=String(i);c+=F("'");
-    if (i==tcSettings.macro)c+=F(" selected");
-    c+=F(">");c+=htmlEscape(config.macro[i].name);c+=F("</option>");
-  }
-  c+=F("</select><label>STREAM seul — emission et animation</label><select name='tcStreamMacro'>");
-  for (uint8_t i=0;i<MACRO_COUNT;++i) {
-    c+=F("<option value='");c+=String(i);c+=F("'");
-    if(i==tcSettings.streamMacro)c+=F(" selected");
-    c+=F(">");c+=htmlEscape(config.macro[i].name);c+=F("</option>");
-  }
-  c+=F("</select><label>REC + STREAM — emission et animation</label><select name='tcBothMacro'>");
-  for (uint8_t i=0;i<MACRO_COUNT;++i) {
-    c+=F("<option value='");c+=String(i);c+=F("'");
-    if(i==tcSettings.bothMacro)c+=F(" selected");
-    c+=F(">");c+=htmlEscape(config.macro[i].name);c+=F("</option>");
-  }
-  c+=F("</select><label>Wi-Fi du routeur de regie</label>"
-    "<input name='tcSSID' maxlength='32' value='"
-  );
-  if(config.knownWiFiCount)c+=htmlEscape(config.knownWiFi[0].ssid);
-  c+=F("' placeholder='Nom du Wi-Fi de regie'>"
-    "<label>Mot de passe Wi-Fi</label><input name='tcPassword' type='password' maxlength='64' autocomplete='new-password' placeholder='Vide : conserver celui de ce reseau'>"
-    "<p class='small'>Choisis une emission differente pour chacun des trois cas. "
-    "Personnalise leurs animations dans les reglages des emissions. REC et STREAM arretes : extinction. "
-    "Orange clignotant : connexion ou etats indisponibles. OFF suspend le suivi jusqu'a Reprendre.</p>"
-    "<button type='submit' class='save'>ENREGISTRER LE MODE</button></details></form>");
-  sendHtmlChunk(c);
-  tcSendBanner();
+  c+=F("'><details><summary>Connexion avancee</summary><label>Port TriCaster</label>"
+    "<input name='tcPort' type='number' min='1' max='65535' value='");c+=String(tcSettings.port);
+  c+=F("'></details><p class='small'>Le Wi-Fi du boitier se regle dans <a href='#network'>Connexion reseau</a>.</p>"
+    "<div class='fixed-roles'><a href='/macro?i=1'>REC seul · regler l'animation →</a>"
+    "<a href='/macro?i=2'>STREAM seul · regler l'animation →</a>"
+    "<a href='/macro?i=3'>REC + STREAM · regler l'animation →</a></div>"
+    "<button type='submit' class='save'>ENREGISTRER LA CONNEXION</button></details></form>");sendHtmlChunk(c);
 }
 
 void tcHandleSave() {
-  String mode=server.arg("mode");
-  IPAddress ip;
-  long port=server.arg("tcPort").toInt();
-  long macro=server.arg("tcMacro").toInt();
-  long streamMacro=server.arg("tcStreamMacro").toInt();
-  long bothMacro=server.arg("tcBothMacro").toInt();
-  if ((mode!="manual" && mode!="tricaster") || !server.hasArg("tcMacro") ||
-      !server.hasArg("tcStreamMacro") || !server.hasArg("tcBothMacro") ||
-      !ip.fromString(server.arg("tcIP")) || port<1 || port>65535 || macro<0 || macro>=MACRO_COUNT ||
-      streamMacro<0 || streamMacro>=MACRO_COUNT || bothMacro<0 || bothMacro>=MACRO_COUNT) {
-    server.send_P(400,PSTR("text/plain"),PSTR("Mode, IP, port ou emission invalide"));return;
+  String mode=server.arg("mode");IPAddress ip;long port=server.arg("tcPort").toInt();
+  if((mode!="manual" && mode!="tricaster") || !ip.fromString(server.arg("tcIP")) || port<1 || port>65535){
+    server.send_P(400,PSTR("text/plain"),PSTR("Adresse IP ou port invalide"));return;
   }
   TcRecSettings value=tcSettings;
-  value.enabled=mode=="tricaster";value.macro=macro;value.port=port;
-  value.streamMacro=streamMacro;value.bothMacro=bothMacro;
+  value.enabled=mode=="tricaster";value.port=port;
+  value.macro=1;value.streamMacro=2;value.bothMacro=3;
   for(uint8_t i=0;i<4;++i)value.ip[i]=ip[i];
-  if(!tcSettingsValid(value,MACRO_COUNT)) {
-    server.send_P(400,PSTR("text/plain"),PSTR("Adresse TriCaster invalide"));return;
-  }
-  String ssid=server.arg("tcSSID"),password=server.arg("tcPassword");ssid.trim();
-  if(value.enabled && (ssid.length()==0 || ssid.length()>32 || password.length()>64 ||
-      (password.length()>0 && password.length()<8) || (findKnownWiFi(ssid)<0 && password.length()==0))) {
-    server.send_P(400,PSTR("text/plain"),PSTR("Renseigne le Wi-Fi de regie et son mot de passe s'il n'est pas deja memorise"));return;
-  }
-  if(!tcSaveSettings(value)) {server.send_P(500,PSTR("text/plain"),PSTR("Echec sauvegarde du mode : reglages precedents conserves"));return;}
-  tcResetConnection();tcSettings=value;tcPaused=false;
-  libraryPreviewActive=false;settingsPreviewActive=false;blackout();
-  if(value.enabled) {
-    rememberWiFi(ssid,password);config.externalWiFiEnabled=true;saveConfig();
-    pendingExternalWiFiApply=true;pendingExternalWiFiApplyAt=millis()+EXTERNAL_APPLY_DELAY_MS;
-  }
-  server.sendHeader("Location","/settings#tricaster",true);
-  server.send_P(303,PSTR("text/plain"),PSTR(""));
+  if(!tcSaveSettings(value)){server.send_P(500,PSTR("text/plain"),PSTR("Connexion non enregistree : reglages precedents conserves"));return;}
+  tcResetConnection();tcSettings=value;
+  server.sendHeader("Location","/settings#tricaster",true);server.send_P(303,PSTR("text/plain"),PSTR(""));
 }
 
 void tcSetupRoutes() {
   server.on("/saveTriCaster",HTTP_POST,tcHandleSave);
   server.on("/api/tricaster/status",HTTP_GET,tcStatus);
+  server.on("/usage/mode",HTTP_POST,[](){
+    String mode=server.arg("mode");
+    if(mode!="manual" && mode!="tricaster"){server.send_P(400,PSTR("text/plain"),PSTR("Mode invalide"));return;}
+    bool enable=mode=="tricaster";
+    if(enable && (tcSettings.ip[0]==192 && tcSettings.ip[1]==0 && tcSettings.ip[2]==2)){
+      server.sendHeader("Location","/settings#tricaster",true);server.send_P(303,PSTR("text/plain"),PSTR(""));return;
+    }
+    if(enable && (!config.externalWiFiEnabled || !config.knownWiFiCount)){
+      server.sendHeader("Location","/settings#network",true);server.send_P(303,PSTR("text/plain"),PSTR(""));return;
+    }
+    TcRecSettings value=tcSettings;value.enabled=enable;
+    if(!tcSaveSettings(value)){server.send_P(500,PSTR("text/plain"),PSTR("Mode non enregistre"));return;}
+    tcResetConnection();tcSettings=value;tcPaused=false;
+    // Keep a manual CARAC direct/alert running when changing automatic follow.
+    if(!tcManualOverride)blackout();
+    server.sendHeader("Location","/",true);server.send_P(303,PSTR("text/plain"),PSTR(""));
+  });
+  server.on("/usage/release",HTTP_POST,[](){
+    tcReleaseManual();server.sendHeader("Location","/",true);server.send_P(303,PSTR("text/plain"),PSTR(""));
+  });
   server.on("/tricaster/resume",HTTP_POST,[](){
-    tcPaused=false;tcApplied=-1;
-    server.sendHeader("Location","/",true);
-    server.send_P(303,PSTR("text/plain"),PSTR(""));
+    tcReleaseManual();server.sendHeader("Location","/",true);server.send_P(303,PSTR("text/plain"),PSTR(""));
   });
 }
 
