@@ -34,7 +34,7 @@
 #include <Updater.h>
 #include <Adafruit_NeoPixel.h>
 
-#define FIRMWARE_VERSION "3.5.0 STUDIO 36LED 100PCT"
+#define FIRMWARE_VERSION "3.5.1 STUDIO 36LED 100PCT WIFI FIX"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -1578,6 +1578,8 @@ int startupRestoreMacro = -1;
 unsigned long lastExternalReconnectAt = 0;
 const unsigned long EXTERNAL_RECONNECT_MS = 30000UL;
 int currentKnownWiFiAttempt = -1;
+WiFiEventHandler externalDisconnectedHandler;
+WiFiEventHandler externalGotIPHandler;
 
 // Applique un changement de Wi-Fi externe APRES avoir repondu au navigateur.
 // Evite tout reboot et evite de couper la requete HTTP en cours.
@@ -4111,8 +4113,8 @@ void beginWiFiScanAsync() {
 
   WiFi.scanDelete();
 
-  // async=true, show_hidden=false
-  int result = WiFi.scanNetworks(true, false);
+  // Manual discovery includes hidden access points; connection never depends on it.
+  int result = WiFi.scanNetworks(true, true);
 
   // Sur ESP8266 un scan asynchrone renvoie normalement WIFI_SCAN_RUNNING (-1).
   // Une autre valeur negative est traitee comme un echec de lancement.
@@ -5780,62 +5782,24 @@ void startAccessPoint() {
 }
 
 bool connectBestKnownWiFi() {
-  if (!config.externalWiFiEnabled || config.knownWiFiCount == 0) {
-    return false;
-  }
+  if (!config.externalWiFiEnabled || config.knownWiFiCount == 0) return false;
+  if (wifiScanRunning || wifiScanStartRequested || pendingExternalWiFiApply) return false;
 
-  Serial.println();
-  Serial.println(F("[WIFI EXT] Recherche du meilleur reseau memorise..."));
-
-  if (WiFi.getMode() != WIFI_AP_STA) {
-    WiFi.mode(WIFI_AP_STA);
-    delay(100);
-  }
-
+  // A remembered SSID is a connection target even when discovery misses it.
+  // Try every saved network in turn; do not block on an automatic scan.
+  int next = (currentKnownWiFiAttempt + 1) % config.knownWiFiCount;
+  if (WiFi.getMode() != WIFI_AP_STA) WiFi.mode(WIFI_AP_STA);
   WiFi.hostname(MDNS_HOSTNAME);
-
-  WiFi.scanDelete();
-  int n = WiFi.scanNetworks(false, false);
-
-  int bestKnown = -1;
-  int32_t bestRSSI = -1000;
-
-  if (n > 0) {
-    for (int scanIndex = 0; scanIndex < n; scanIndex++) {
-      String seenSSID = WiFi.SSID(scanIndex);
-      int knownIndex = findKnownWiFi(seenSSID);
-
-      if (knownIndex >= 0 && WiFi.RSSI(scanIndex) > bestRSSI) {
-        bestRSSI = WiFi.RSSI(scanIndex);
-        bestKnown = knownIndex;
-      }
-    }
-  }
-
-  WiFi.scanDelete();
-
-  if (bestKnown < 0) {
-    Serial.println(F("[WIFI EXT] Aucun reseau memorise disponible"));
-    currentKnownWiFiAttempt = -1;
-    return false;
-  }
-
-  currentKnownWiFiAttempt = bestKnown;
-
-  Serial.println(
-    "[WIFI EXT] Connexion a " +
-    String(config.knownWiFi[bestKnown].ssid) +
-    " | RSSI " + String(bestRSSI) + " dBm"
-  );
-
-  WiFi.begin(
-    config.knownWiFi[bestKnown].ssid,
-    config.knownWiFi[bestKnown].password
-  );
-
+  int previousStatus = (int)WiFi.status();
+  WiFi.disconnect(false); // Keep the SoftAP and saved application settings.
+  mdnsStarted = false;
+  currentKnownWiFiAttempt = next;
+  Serial.printf("[WIFI EXT] Tentative directe %u/%u : %s | statut precedent=%d\n",
+    (unsigned)(next + 1), (unsigned)config.knownWiFiCount,
+    config.knownWiFi[next].ssid, previousStatus);
+  WiFi.begin(config.knownWiFi[next].ssid, config.knownWiFi[next].password);
   externalConnectStarted = true;
   lastExternalReconnectAt = millis();
-
   return true;
 }
 
@@ -5843,6 +5807,7 @@ void startMDNSIfPossible();
 
 void applyPendingExternalWiFi() {
   if (!pendingExternalWiFiApply) return;
+  if (wifiScanRunning || wifiScanStartRequested) return;
 
   if ((long)(millis() - pendingExternalWiFiApplyAt) < 0) {
     return;
@@ -5983,13 +5948,7 @@ void updateExternalWiFi() {
   if (!externalConnectStarted ||
       now - lastExternalReconnectAt >= EXTERNAL_RECONNECT_MS) {
 
-    // Un scan automatique peut faire sauter momentanement un client
-    // connecte directement a ON_AIR-MOC-02. On privilegie donc l'interface :
-    // tant qu'un telephone est sur l'AP, aucun scan automatique.
-    if (WiFi.softAPgetStationNum() > 0) {
-      return;
-    }
-
+    // Direct retries remain active while a phone uses the SoftAP.
     externalConnectStarted = true;
     lastExternalReconnectAt = now;
 
@@ -6029,6 +5988,15 @@ void setup() {
   blackout();
 
   // Le Wi-Fi apparait immediatement au demarrage.
+  externalDisconnectedHandler = WiFi.onStationModeDisconnected(
+    [](const WiFiEventStationModeDisconnected& event) {
+      Serial.printf("[WIFI EXT] Deconnexion : SSID=%s | raison=%u\n",
+        event.ssid.c_str(), (unsigned)event.reason);
+    });
+  externalGotIPHandler = WiFi.onStationModeGotIP(
+    [](const WiFiEventStationModeGotIP& event) {
+      Serial.printf("[WIFI EXT] CONNECTE | IP=%s\n", event.ip.toString().c_str());
+    });
   startAccessPoint();
   setupWebServer();
 

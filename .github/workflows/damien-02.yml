@@ -1,7 +1,7 @@
 name: Build and release Damien 02
 on:
   push:
-    branches: ["damien-02-v3.5.0"]
+    branches: ["damien-02-v3.5.1"]
     paths:
       - "variants/ON_AIR_DAMIEN_02/**"
       - ".github/workflows/damien-02.yml"
@@ -19,6 +19,7 @@ jobs:
           git fetch --depth=1 origin efefbef61bba26bd57feaf1d220a7d36801d6897
           git fetch --depth=1 origin 9fd36bbb627346f8e6a70c49339bc49a015df8f1
           cp variants/ON_AIR_DAMIEN_02/ON_AIR_DAMIEN_02.ino ON_AIR_ESP8266.ino
+          python3 variants/ON_AIR_DAMIEN_02/test_wifi.py
           python3 tools/check-firmware.py
           python3 tools/check-motion.py
           python3 tools/check-ota.py
@@ -39,17 +40,17 @@ jobs:
           cp variants/ON_AIR_DAMIEN_02/ON_AIR_DAMIEN_02.ino /tmp/ONAIR02/ONAIR02.ino
           arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --output-dir "$GITHUB_WORKSPACE/build" /tmp/ONAIR02 2>&1 | tee release/COMPILATION.log
           python3 tools/check-memory.py release/COMPILATION.log
-          cp build/ONAIR02.ino.bin release/ON_AIR_DAMIEN_02_V3_5_0_OTA.bin
+          cp build/ONAIR02.ino.bin release/ON_AIR_DAMIEN_02_V3_5_1_OTA.bin
           cp variants/ON_AIR_DAMIEN_02/ON_AIR_DAMIEN_02.ino release/
           cp variants/ON_AIR_DAMIEN_02/README.md release/
           sha256sum release/*.bin release/*.ino > release/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: ON_AIR_DAMIEN_02_V3_5_0
+          name: ON_AIR_DAMIEN_02_V3_5_1
           path: release/
           if-no-files-found: error
       - name: Publish distinct release without replacing existing releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v3.5.0-02 release/* --target "$GITHUB_SHA" --title "ON AIR Damien 02 — V3.5.0" --notes-file variants/ON_AIR_DAMIEN_02/README.md --latest=false
+          gh release create v3.5.1-02 release/* --target "$GITHUB_SHA" --title "ON AIR Damien 02 — V3.5.1" --notes-file variants/ON_AIR_DAMIEN_02/README.md --latest=false

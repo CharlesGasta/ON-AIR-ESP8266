@@ -1,21 +1,18 @@
-# ON AIR Damien 02 — V3.5.0 STUDIO
+# ON AIR Damien 02 — V3.5.1 STUDIO — correction Wi-Fi
 
-Version complète avec LED adressables et éditeur de cinématique.
-Clone exact de la dernière release Damien v3.5.0, commit 35e91ae68b172eb7efb5c7d3c07fd48e41bbc532.
-Cette release remplace le choix de base v3.0.4-02 pour le deuxième boîtier.
+Corrige la V3.5.0-02 pour le deuxième boîtier.
+- Les tentatives de connexion utilisent directement les SSID mémorisés, même absents de la liste détectée.
+- Les réseaux enregistrés sont essayés à tour de rôle, sans scan automatique bloquant.
+- La reconnexion reste active même quand un téléphone utilise le point d'accès.
+- Les scans manuels et l'application des réglages ne démarrent pas simultanément.
+- Diagnostic série : statut, motif de déconnexion et adresse IP obtenue. Aucun mot de passe n'est journalisé.
+- Le scan manuel inclut les points d'accès masqués ; leur nom n'est pas nécessairement annoncé.
 
-Conservés : 36 LED WS2812E sur D5 / GPIO14, macros, logos, animations de démarrage, éditeur LED par LED, séquences, chenillards, flash/strobe, fondus, banque et bibliothèque partagée d'animations, import/export, réglages et fonctions OTA.
-Seules les chaînes d'identification ON_AIR-MOC et onair-moc reçoivent le suffixe -02.
-Nom et SSID AP par défaut : ON_AIR-MOC-02.
-Adresse mDNS : http://onair-moc-02.local
-Mot de passe AP par défaut hérité de la source : 12345678.
-Adresse sur le réseau AP : http://192.168.4.1
+Conservés : éditeur complet V3.5.0 STUDIO, bibliothèque, séquences, macros, logos, effets, OTA, 36 WS2812E, D5/GPIO14, EEPROM et fichiers LittleFS.
+Identifiants par défaut : ON_AIR-MOC-02, onair-moc-02.local ; mot de passe AP par défaut 12345678.
+Les réglages et mots de passe déjà enregistrés restent conservés.
+Ne pas effacer la flash ni faire de remise à zéro usine.
+Le firmware Damien original et ses releases sont inchangés.
 
-Le format EEPROM, les fichiers LittleFS, les migrations et les réglages restent identiques.
-Un boîtier vierge reçoit les noms -02 au premier démarrage.
-Un boîtier déjà configuré conserve ses noms et son mot de passe enregistrés : les adapter dans les paramètres si nécessaire.
-Ne pas effacer les paramètres ni restaurer la sauvegarde d'un autre boîtier sans adapter ses noms.
-Premier flash USB pour un boîtier vierge ; mises à jour suivantes possibles par OTA.
-
-L'original Damien, la branche main et les releases originales ne sont pas modifiés.
-Compilation et tests automatiques exécutés en CI ; aucun nouvel essai physique n'est revendiqué.
+Tests de reconnexion exécutant les fonctions C++ réelles avec une radio simulée ; tests moteur d'animation/configuration/OTA/mémoire et compilation ESP8266 en CI.
+Le comportement radio dans le logement doit encore être vérifié sur le boîtier : ce correctif supprime les blocages logiciels identifiés, sans prétendre avoir confirmé la cause de l'absence au scan.
