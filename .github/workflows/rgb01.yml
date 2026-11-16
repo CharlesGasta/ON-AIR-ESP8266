@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Verify dedicated RGB hardware and migration
         run: |
           python3 variants/ONE_AIR_CARAC_RGB_01/test_rgb01.py
