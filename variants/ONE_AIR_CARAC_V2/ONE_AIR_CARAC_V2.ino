@@ -6024,6 +6024,8 @@ void startAccessPoint() {
   Serial.println(F("[WIFI AP] Initialisation..."));
 
   WiFi.persistent(false);
+  // Application scheduler owns direct retries and saved-network rotation.
+  WiFi.setAutoReconnect(false);
   WiFi.mode(WIFI_OFF);
   delay(250);
 

@@ -1,54 +1,21 @@
-# One air Carac v2 — 2.0.0
+# One air CARAC v2 — 2.0.1 — MOC 02 / TriCaster
 
-Projet derive du firmware ON AIR 02 V3.7.0 valide pour CARAC manuel prioritaire et TriCaster automatique.
-Les versions Damien et ON AIR 02 existantes restent intactes.
+Base verifiee : one-air-carac-v2.0.0, commit 8cac650c6adcc539979fc66f6706568b02d870d2.
+36 WS2812E, D5/GPIO14, plafond 100 %, AP ON_AIR-MOC-02, macros, OTA et suivi TriCaster REC/STREAM conserves. Aucun boitier flashe et aucune branche Damien modifiee.
 
-## Nouveautes
+## Installation
+Installer ONE_AIR_CARAC_V2_0_1_OTA.bin via /update. Ne pas effacer EEPROM ni formater LittleFS. Les identifiants et parametres TriCaster existants restent conserves.
 
-- Boutons de mode lisibles en themes clair et sombre, avec couleurs de texte/fond explicites et contraste teste.
-- Nouveau nom One air Carac v2 et panneau de mode simplifie.
-- Menu Reseau : etat de connexion, SSID, IPv4, masque, passerelle, DNS, MAC, RSSI, mDNS et IP du point d'acces autonome.
-- Profil DHCP ou IP fixe independant pour chaque Wi-Fi memorise. Pas d'adresse privee ni de mot de passe inclus dans le source.
-- Verification du masque, des adresses de reseau/broadcast, de la passerelle, des DNS et du chevauchement avec le point d'acces autonome.
-- Application differee apres la reponse du navigateur, sans reset usine. DHCP est reactive explicitement en quittant un profil statique.
-- Champs de couleur/intensite OFF visibles sur les profils automatiques, comme sur CARAC.
-- Sans connexion TriCaster : animation jaune clignotante conservee. Connecte : affichage REC ON/OFF, STREAM ON/OFF et combinaison.
-- Lorsque les deux etats sont OFF, afficher l'etat OFF du dernier profil actif ou d'un profil choisi dans les reglages TriCaster.
-- 9 nouveaux modeles editables : signatures CARAC bleu/vert/orange, respiration, comete, ouverture, bleu/orange TriCaster, pulsation REC, vague STREAM, double signature et veille bleue. Les 5 anciens modeles restent disponibles.
-- Aucun modele n'ecrase une animation existante : utiliser Banque, choisir un modele puis enregistrer sa propre copie.
+## Wi-Fi CARAC
+1. Se connecter au point d'acces ON_AIR-MOC-02 puis ouvrir http://192.168.4.1/settings.
+2. Activer la connexion externe, saisir le SSID CARAC exact (2.4 GHz) et son mot de passe localement dans le formulaire, puis ENREGISTRER ET CONNECTER.
+3. Dans Adresse IP, selectionner ce meme reseau et DHCP, puis enregistrer/appliquer.
+4. Verifier le SSID et l'IP attribuee dans Reseau. Le dernier reseau enregistre est prioritaire au prochain boot. Oublier Sarah_Charles_Home si ce reseau ne doit plus servir de secours.
+5. Verifier ensuite la connexion TriCaster et les etats REC/STREAM sur le reseau CARAC.
 
-## Utilisation du reseau
+Aucun SSID CARAC exact ni mot de passe connu ou embarque. Une mise a jour OTA conserve Sarah_Charles_Home tant que CARAC n'a pas ete configure. Les identifiants restent en flash sur le boitier ; ne pas publier de sauvegarde contenant des secrets.
 
-Memoriser le Wi-Fi dans la rubrique existante, puis choisir ce reseau dans Adresse IP — DHCP ou fixe.
-DHCP reste le defaut de tous les reseaux sans profil explicite.
-En IP fixe, indiquer IP, masque et passerelle ; DNS principal vide utilise la passerelle, DNS secondaire facultatif.
-Enregistrer et appliquer. La page affiche la nouvelle adresse ou l'acces mDNS. Le point d'acces autonome conserve son adresse habituelle.
-Les adresses ne sont jamais reutilisees sur un autre SSID. Un profil invalide ou absent au demarrage conserve DHCP.
-Le menu ne peut pas verifier qu'une adresse statique est libre sur le routeur : choisir une adresse libre ou reservee.
+## Comportement et validation
+Le code existant utilise DHCP explicite (WiFi.config avec adresses nulles), AP+STA, sauvegarde en flash et tentatives directes sans scan bloquant toutes les 30 secondes. La 2.0.1 affiche le reseau prioritaire et l'aide de configuration CARAC, explique la raison 201 dans le journal et desactive la reconnexion SDK concurrente ; le planificateur applicatif conserve les tentatives automatiques.
 
-## Roles et priorite conserves
-
-CARAC seul possede Direct/Alerte et garde la priorite manuelle.
-REC, STREAM et REC + STREAM sont des profils fixes commandes exclusivement par le TriCaster.
-Rendre la main au TriCaster reprend les etats actuels ; OFF general eteint tout et suspend le suivi.
-Le boitier lit les etats mais ne commande ni l'enregistrement ni la diffusion.
-36 WS2812E sur D5/GPIO14, macros, logos, bibliotheque, editeur et OTA conserves.
-
-## Installation et conservation
-
-Le .ino est complet et autonome. Les headers joints servent aussi aux tests et a la maintenance.
-Installer le .bin via l'OTA ou televerser le .ino par USB avec le decoupage flash actuel et Only Sketch.
-Aucune remise a zero necessaire. Ne pas formater LittleFS.
-Les identifiants reseau deja enregistres restent inchanges, meme si le nom du produit change.
-Les structures EEPROM historiques et sauvegardes V1/V2 restent compatibles.
-Reglages IP dans /network.cfg, reglages TriCaster dans /tricaster.cfg, avec checksum et remplacement atomique.
-Les sauvegardes historiques .cfg ne contiennent pas ces deux fichiers ni les images et sequences de bibliotheque : conserver les exports d'animations et noter les reglages de connexion avant une remise a zero.
-
-## Validation
-
-Core ESP8266 3.1.2, NeoPixel 1.15.5, NodeMCU ESP-12E.
-Tests des fonctions reelles d'application et de sauvegarde reseau, validation IPv4, retour DHCP et isolation entre SSID.
-Tests des vrais gestionnaires de commande, parseur TriCaster et controleur ON/OFF/priorite.
-Tests du JavaScript, de la banque d'animations et du contraste des boutons ; rendu HTML produit par les fonctions C++ reelles.
-Tests existants moteur LED, EEPROM, OTA et budget memoire.
-La connexion IP fixe reelle, le routeur et le TriCaster doivent etre valides sur le materiel de l'utilisateur.
+CI : tests de conservation de l'original, EEPROM, macros, moteur LED, Wi-Fi, adressage, TriCaster, interface et OTA ; compilation NodeMCU ESP-12E avec ESP8266 3.1.2 / NeoPixel 1.15.5 ; controle memoire et SHA256. La CI ne prouve pas la connexion physique a CARAC ou au TriCaster : validation sur place requise.
