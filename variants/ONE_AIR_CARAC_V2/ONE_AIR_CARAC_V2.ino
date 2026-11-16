@@ -35,7 +35,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <lwip/dns.h>
 
-#define FIRMWARE_VERSION "2.0.0 ONE AIR CARAC V2 36LED"
+#define FIRMWARE_VERSION "2.0.1 ONE AIR CARAC V2 36LED"
 
 // ============================================================
 // RUBAN ADRESSABLE WS2812E - LOGO DAMIEN
@@ -3797,6 +3797,12 @@ void sendSettingsPage() {
   c += F("<button id='scanWifiBtn' type='button' class='save' style='width:100%;margin-top:10px' onclick='scanWiFi()'>📡 DETECTER LES WI-FI</button>");
   c += F("<div id='wifiScanStatus' class='small' style='margin-top:8px'>Appuie sur le bouton pour rechercher les reseaux 2.4 GHz.</div>");
   c += F("<div id='wifiScanResults' style='margin-top:10px'></div>");
+  c += F("<p class='small'>CARAC : saisir le SSID exact du reseau 2.4 GHz et son mot de passe, puis enregistrer. Aucun identifiant CARAC n est preconfigure. Le dernier reseau enregistre sera essaye en premier a chaque demarrage. Choisir DHCP dans Adresse IP.</p>");
+  if (config.knownWiFiCount > 0) {
+    c += F("<div class='small'>Reseau prioritaire au demarrage : <b>");
+    c += htmlEscape(String(config.knownWiFi[0].ssid));
+    c += F("</b></div>");
+  }
   c += F("<label>SSID du reseau externe</label>");
   c += F("<input id='externalSSID' name='externalSSID' maxlength='32' value='' placeholder='Selectionne un Wi-Fi ci-dessus'>");
   c += F("<label>Mot de passe</label>");
@@ -3843,7 +3849,9 @@ void sendSettingsPage() {
       c = F("<div class='wifirow' style='cursor:default'><div style='min-width:0'>");
       c += F("<div class='wifiname'>");
       c += htmlEscape(String(config.knownWiFi[k].ssid));
-      c += F("</div><div class='wifimeta'>Mot de passe memorise dans l ESP</div></div>");
+      c += F("</div><div class='wifimeta'>Mot de passe memorise dans l ESP");
+      if (k == 0) c += F(" - PRIORITAIRE AU DEMARRAGE");
+      c += F("</div></div>");
       c += F("<button type='button' style='min-height:38px;padding:6px 10px;background:#fff0f0;color:#b3434a' onclick='forgetWiFi(");
       c += String(k);
       c += F(")'>OUBLIER</button></div>");
@@ -6671,6 +6679,9 @@ void setup() {
     [](const WiFiEventStationModeDisconnected& event) {
       Serial.printf("[WIFI EXT] Deconnexion : SSID=%s | raison=%u\n",
         event.ssid.c_str(), (unsigned)event.reason);
+      if (event.reason == 201) {
+        Serial.println(F("[WIFI EXT] AP introuvable : verifier le SSID exact et la couverture 2.4 GHz. Configurer CARAC via http://192.168.4.1/settings ; aucun identifiant CARAC preconfigure."));
+      }
     });
   externalGotIPHandler = WiFi.onStationModeGotIP(
     [](const WiFiEventStationModeGotIP& event) {
