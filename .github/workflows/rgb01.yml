@@ -1,0 +1,51 @@
+name: Build and release ON AIR RGB 01
+on:
+  push:
+    branches: ["one-air-carac-rgb01-v2.1.0"]
+    paths: ["variants/ONE_AIR_CARAC_RGB_01/**", ".github/workflows/rgb01.yml"]
+permissions:
+  contents: write
+jobs:
+  rgb01:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify dedicated RGB hardware and migration
+        run: |
+          python3 variants/ONE_AIR_CARAC_RGB_01/test_rgb01.py
+          python3 variants/ONE_AIR_CARAC_RGB_01/test_wifi.py
+          python3 variants/ONE_AIR_CARAC_RGB_01/test_network.py
+          python3 variants/ONE_AIR_CARAC_RGB_01/test_tricaster.py
+          python3 variants/ONE_AIR_CARAC_RGB_01/test_tricaster_settings.py
+          python3 variants/ONE_AIR_CARAC_RGB_01/test_usage_permissions.py
+          python3 variants/ONE_AIR_CARAC_RGB_01/test_usage_ui.py
+          node variants/ONE_AIR_CARAC_RGB_01/test_usage_js.cjs
+          git diff --exit-code 9a3e9ad654a6d1247c2d37454981ee76c7a3f951 -- ON_AIR_ESP8266.ino variants/ONE_AIR_CARAC_V2 variants/ON_AIR_DAMIEN_02
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install pinned ESP8266 core
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://arduino.esp8266.com/stable/package_esp8266com_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp8266:esp8266@3.1.2
+      - name: Compile RGB 01
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build release
+          arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2:eesz=4M2M --output-dir build variants/ONE_AIR_CARAC_RGB_01 2>&1 | tee release/COMPILATION.log
+          python3 tools/check-memory.py release/COMPILATION.log
+          cp build/ONE_AIR_CARAC_RGB_01.ino.bin release/ONE_AIR_CARAC_RGB_01_2_1_0.bin
+          cp variants/ONE_AIR_CARAC_RGB_01/* release/
+          cd release
+          sha256sum *.bin *.ino *.h > SHA256SUMS.txt
+          zip ONE_AIR_CARAC_RGB_01_2_1_0_COMPLETE.zip *
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ONE_AIR_CARAC_RGB_01_2_1_0
+          path: release/
+          if-no-files-found: error
+      - name: Publish dedicated RGB 01 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create one-air-carac-rgb01-v2.1.0 release/* --target "$GITHUB_SHA" --title "ON AIR CARAC RGB 01 — 2.1.0" --notes-file variants/ONE_AIR_CARAC_RGB_01/README.md --latest=false
